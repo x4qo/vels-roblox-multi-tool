@@ -1,0 +1,22 @@
+# Build output - named specifically (not *.exe) since handle64.exe is a
+# bundled runtime dependency, not something the build produces.
+/VelsMultiTool.exe
+*.zip
+*.obj
+*.o
+*.res
+*.pdb
+*.ilk
+*.exp
+*.lib
+
+# Runtime/user data - generated at runtime, never source
+accounts.dat
+placeid.dat
+/chrome_login_data/
+/webview2_data/
+
+# Editor/OS cruft
+.vs/
+*.user
+Thumbs.db
