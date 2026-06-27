@@ -113,7 +113,3 @@ rmdir /s /q webview2_data
 ```
 
 Keep `handle64.exe` only if you are allowed to redistribute it. If not, remove it from the repo and tell users to download it separately from Microsoft Sysinternals.
-
-## License
-
-No license has been specified yet. Add a `LICENSE` file before publishing if you want others to be able to use, modify, or redistribute the code.
