@@ -5,20 +5,25 @@ set GPP=g++
 where %GPP% >nul 2>nul
 if errorlevel 1 (
     echo g++ not found on PATH. Install MinGW-w64 first ^(e.g. winget install BrechtSanders.WinLibs.POSIX.UCRT^) and restart your shell.
+    pause
     exit /b 1
 )
 
 where windres >nul 2>nul
 if errorlevel 1 (
     echo windres not found on PATH ^(it ships with MinGW-w64^). Install MinGW-w64 first and restart your shell.
+    pause
     exit /b 1
 )
 
 windres src\app.rc -O coff -o src\app_icon.res
 if errorlevel 1 (
     echo Failed to compile app icon resource.
+    pause
     exit /b 1
 )
+
+echo Compiling - this takes 20-60+ seconds with no output, that's normal, g++ doesn't print progress...
 
 %GPP% -O2 -std=c++17 -municode -mwindows ^
   -I src\imgui -I src\imgui\backends ^
@@ -32,6 +37,8 @@ if errorlevel 1 (
 
 if errorlevel 1 (
     echo Build failed.
+    pause
     exit /b 1
 )
 echo Build succeeded: VelsMultiTool.exe
+pause
