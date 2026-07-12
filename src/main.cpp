@@ -2812,8 +2812,7 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         for (auto& b : abs2) {
             ImGui::SetCursorScreenPos(ImVec2(x, y));
             ImGui::PushID(100 + b.id);
-            bool primary = (b.id == 0);
-            bool clicked = DrawPopButton(b.label, ImVec2(b.w, bh), primary, b.icon);
+            bool clicked = DrawPopButton(b.label, ImVec2(b.w, bh), false, b.icon);
             ImGui::PopID();
             if (clicked) {
                 if (b.id == 0 && !loginInProgress.load()) {
@@ -2956,7 +2955,9 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
     // Accounts table card
     // =====================================================================
     {
-        float bodyH = std::max(260.0f, ImGui::GetContentRegionAvail().y - 8.0f);
+        // Fixed height so the card never gets squeezed to fit a short window -
+        // the page scrolls instead of clipping the table / empty-state buttons.
+        float bodyH = 340.0f;
         ImVec2 cp = beginCard("AccountsCard", bodyH);
         ImGui::PushFont(theme::fontBrand);
         IconBox(ImVec2(cp.x + padX, cp.y + 16), 26.0f, icon::SHARE2, theme::softAccentBg, theme::accent, 7.0f);
