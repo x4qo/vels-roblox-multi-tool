@@ -1874,6 +1874,26 @@ static void DrawBrowserCookieCard(float maxHeight) {
 // ---------------------------------------------------------------------------
 // Pages
 // ---------------------------------------------------------------------------
+
+// On-demand elevation. Singleton-handle cleanup and MAC spoofing need admin;
+// instead of forcing UAC at launch we only prompt when one of those features
+// is actually invoked. Returns true if already elevated. Otherwise offers to
+// relaunch elevated and, if accepted, restarts the app (this process exits).
+static bool EnsureElevatedFor(const wchar_t* feature) {
+    if (backend::IsElevated()) return true;
+    std::wstring msg = std::wstring(feature) +
+        L" needs administrator rights.\n\nRestart Vels Multi Tool as administrator now?";
+    if (MessageBoxW(nullptr, msg.c_str(), L"Vels Multi Tool", MB_YESNO | MB_ICONWARNING) == IDYES) {
+        if (backend::RelaunchAsAdmin()) {
+            backend::Shutdown(); // release mutex/locks so the elevated instance can take over
+            ExitProcess(0);
+        }
+        MessageBoxW(nullptr, L"Could not relaunch as administrator.",
+            L"Vels Multi Tool", MB_OK | MB_ICONERROR);
+    }
+    return false;
+}
+
 static void PageMultiInstance() {
     SectionTitle(icon::ROCKET, "Multi-Instance Launcher",
         "Watches for Roblox and closes the singleton lock handle so you can run more than one client at once.");
@@ -1883,7 +1903,9 @@ static void PageMultiInstance() {
     if (watching) {
         if (PrimaryIconButton(icon::PLAY, "Stop Watching", ImVec2(190, 48))) backend::StopWatching();
     } else {
-        if (PrimaryIconButton(icon::PLAY, "Start Watching", ImVec2(190, 48))) backend::StartWatching();
+        if (PrimaryIconButton(icon::PLAY, "Start Watching", ImVec2(190, 48))) {
+            if (EnsureElevatedFor(L"Closing Roblox singleton handles")) backend::StartWatching();
+        }
     }
     ImGui::SameLine();
     if (SecondaryIconButton(icon::PLUS, "Launch New Instance", ImVec2(230, 48))) {
@@ -1944,13 +1966,17 @@ static void PageMacSpoofer() {
     }
     ImGui::SameLine(0, 12);
     if (MacActionButton("##mac_spoof", "Spoof MAC", MacButtonIcon::Shuffle, ImVec2(150, 40), true)) {
-        int idx = selected;
-        std::thread([idx]() { backend::SpoofAdapter(idx); }).detach();
+        if (EnsureElevatedFor(L"MAC address spoofing")) {
+            int idx = selected;
+            std::thread([idx]() { backend::SpoofAdapter(idx); }).detach();
+        }
     }
     ImGui::SameLine(0, 12);
     if (MacActionButton("##mac_restore", "Restore Default", MacButtonIcon::Restore, ImVec2(168, 40), false)) {
-        int idx = selected;
-        std::thread([idx]() { backend::RestoreAdapter(idx); }).detach();
+        if (EnsureElevatedFor(L"Restoring the default MAC address")) {
+            int idx = selected;
+            std::thread([idx]() { backend::RestoreAdapter(idx); }).detach();
+        }
     }
     ImGui::Unindent(12);
 
@@ -2524,11 +2550,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         if (setCtx) setCtx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
-    if (!backend::IsElevated()) {
-        if (backend::RelaunchAsAdmin()) return 0;
-        MessageBoxW(nullptr, L"Vels Multi Tool needs administrator rights to close singleton handles and change MAC addresses.",
-            L"Vels Multi Tool", MB_OK | MB_ICONWARNING);
-    }
+    // Admin rights are requested on demand (see EnsureElevatedFor), only when
+    // a feature that actually needs them is used - not forced at launch.
 
     wchar_t pathBuf[MAX_PATH];
     GetModuleFileNameW(nullptr, pathBuf, MAX_PATH);
