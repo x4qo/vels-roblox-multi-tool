@@ -8,12 +8,14 @@
 #include <objbase.h>
 #include <wincodec.h>
 #include <shellapi.h>
+#include <commdlg.h>
 #include <tchar.h>
 #include <thread>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <unordered_map>
+#include <set>
 #include <filesystem>
 #include <random>
 #include <cmath>
@@ -310,23 +312,25 @@ namespace theme {
     void SetMode(bool dark) {
         darkMode = dark;
         if (dark) {
-            bg = ImVec4(0.050f, 0.052f, 0.070f, 1.00f);
-            sidebarBg = ImVec4(0.075f, 0.078f, 0.105f, 0.98f);
-            panelBg = ImVec4(0.095f, 0.100f, 0.135f, 0.98f);
-            panelBg2 = ImVec4(0.120f, 0.126f, 0.168f, 1.00f);
-            glassFill = ImVec4(0.135f, 0.140f, 0.185f, 1.00f);
-            glassHover = ImVec4(0.165f, 0.170f, 0.225f, 1.00f);
-            glassActive = ImVec4(0.150f, 0.260f, 0.420f, 1.00f);
-            accent = ImVec4(0.290f, 0.620f, 0.945f, 1.00f);
-            accentHov = ImVec4(0.400f, 0.710f, 0.995f, 1.00f);
-            accentAct = ImVec4(0.220f, 0.520f, 0.855f, 1.00f);
+            // Neutral near-black palette (Volt-style): flat dark background,
+            // slightly-lifted panels, thin cool-gray borders, blue accent.
+            bg = ImVec4(0.043f, 0.045f, 0.051f, 1.00f);
+            sidebarBg = ImVec4(0.063f, 0.066f, 0.074f, 0.98f);
+            panelBg = ImVec4(0.082f, 0.086f, 0.096f, 1.00f);
+            panelBg2 = ImVec4(0.113f, 0.118f, 0.130f, 1.00f);
+            glassFill = ImVec4(0.120f, 0.125f, 0.138f, 1.00f);
+            glassHover = ImVec4(0.150f, 0.156f, 0.172f, 1.00f);
+            glassActive = ImVec4(0.160f, 0.235f, 0.360f, 1.00f);
+            accent = ImVec4(0.235f, 0.545f, 0.945f, 1.00f);
+            accentHov = ImVec4(0.340f, 0.630f, 0.995f, 1.00f);
+            accentAct = ImVec4(0.190f, 0.470f, 0.865f, 1.00f);
             accentText = ImVec4(1.000f, 1.000f, 1.000f, 1.00f);
-            text = ImVec4(0.940f, 0.945f, 0.970f, 1.00f);
-            subtext = ImVec4(0.645f, 0.675f, 0.780f, 1.00f);
-            border = ImVec4(0.210f, 0.220f, 0.290f, 1.00f);
-            softAccentBg = ImVec4(0.290f, 0.620f, 0.945f, 0.18f);
-            titlebarBg = ImVec4(0.050f, 0.052f, 0.070f, 0.98f);
-            cardLine = ImVec4(1, 1, 1, 0.06f);
+            text = ImVec4(0.918f, 0.926f, 0.945f, 1.00f);
+            subtext = ImVec4(0.545f, 0.565f, 0.615f, 1.00f);
+            border = ImVec4(0.165f, 0.172f, 0.192f, 1.00f);
+            softAccentBg = ImVec4(0.235f, 0.545f, 0.945f, 0.16f);
+            titlebarBg = ImVec4(0.055f, 0.058f, 0.066f, 1.00f);
+            cardLine = ImVec4(1, 1, 1, 0.05f);
         } else {
             bg = ImVec4(0.965f, 0.970f, 0.988f, 1.00f);
             sidebarBg = ImVec4(0.985f, 0.987f, 0.996f, 0.98f);
@@ -570,7 +574,24 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
     ImU32 textCol = ImGui::ColorConvertFloat4ToU32(theme::text);
 
     dl->AddRectFilled(ImVec2(0, 0), ImVec2(winWidth, (float)TITLEBAR_H), bgCol);
-    (void)borderCol;
+    dl->AddLine(ImVec2(0, (float)TITLEBAR_H - 0.5f), ImVec2(winWidth, (float)TITLEBAR_H - 0.5f), borderCol, 1.0f);
+
+    // lightning brand mark, top-left
+    {
+        float bx = 14.0f, by = TITLEBAR_H * 0.5f;
+        ImU32 accentU = ImGui::ColorConvertFloat4ToU32(theme::accent);
+        ImVec2 bolt[] = {
+            ImVec2(bx + 6, by - 8), ImVec2(bx - 1, by + 1), ImVec2(bx + 4, by + 1),
+            ImVec2(bx + 1, by + 8), ImVec2(bx + 9, by - 2), ImVec2(bx + 4, by - 2),
+        };
+        dl->AddConvexPolyFilled(bolt, 6, accentU);
+    }
+    // centered window title
+    {
+        const char* title = "Account Manager";
+        ImVec2 ts = ImGui::CalcTextSize(title);
+        dl->AddText(ImVec2((winWidth - ts.x) * 0.5f, (TITLEBAR_H - ts.y) * 0.5f), textCol, title);
+    }
 
     float xMin = winWidth - BTN_W * 3;
     float xMax = winWidth - BTN_W * 2;
@@ -2539,6 +2560,547 @@ static void PageAccounts(HWND hwnd) {
     }
 }
 
+// ===========================================================================
+// Redesigned single-screen "Account Manager" (Volt-style layout)
+// ===========================================================================
+
+// Pill toggle switch. Returns true on the frame it was flipped.
+static bool ToggleSwitch(const char* id, bool* v) {
+    ImVec2 sz(46, 26);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton(id, sz);
+    bool clicked = ImGui::IsItemClicked();
+    if (clicked) *v = !*v;
+    float& anim = g_widgetAnim[ImGui::GetID(id)];
+    float target = *v ? 1.0f : 0.0f;
+    anim += (target - anim) * std::min(1.0f, ImGui::GetIO().DeltaTime * 16.0f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec4 off = theme::panelBg2, on = theme::accent;
+    ImVec4 track(off.x + (on.x - off.x) * anim, off.y + (on.y - off.y) * anim,
+                 off.z + (on.z - off.z) * anim, 1.0f);
+    dl->AddRectFilled(pos, ImVec2(pos.x + sz.x, pos.y + sz.y), ImGui::ColorConvertFloat4ToU32(track), sz.y * 0.5f);
+    if (anim < 0.98f)
+        dl->AddRect(pos, ImVec2(pos.x + sz.x, pos.y + sz.y), ImGui::ColorConvertFloat4ToU32(theme::border), sz.y * 0.5f, 0, 1.0f);
+    float knobR = sz.y * 0.5f - 3.0f;
+    float kx = pos.x + 3.0f + knobR + (sz.x - 6.0f - knobR * 2.0f) * anim;
+    dl->AddCircleFilled(ImVec2(kx, pos.y + sz.y * 0.5f), knobR, ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 1)));
+    return clicked;
+}
+
+// Segmented control (e.g. None / Round-robin / Assigned). Returns the chosen index.
+static int SegmentedControl(const char* id, const char* const* opts, int count, int idx, ImVec2 size) {
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+        ImGui::ColorConvertFloat4ToU32(theme::panelBg2), 8.0f);
+    dl->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+        ImGui::ColorConvertFloat4ToU32(theme::border), 8.0f, 0, 1.0f);
+    float segW = size.x / (float)count;
+    int result = idx;
+    for (int i = 0; i < count; ++i) {
+        ImGui::PushID(i);
+        ImVec2 sp(pos.x + segW * i, pos.y);
+        ImGui::SetCursorScreenPos(sp);
+        ImGui::InvisibleButton(id, ImVec2(segW, size.y));
+        bool hov = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked()) result = i;
+        if (i == idx)
+            dl->AddRectFilled(ImVec2(sp.x + 3, sp.y + 3), ImVec2(sp.x + segW - 3, sp.y + size.y - 3),
+                ImGui::ColorConvertFloat4ToU32(theme::glassActive), 6.0f);
+        ImVec4 col = (i == idx) ? theme::accentText : (hov ? theme::text : theme::subtext);
+        ImVec2 ts = ImGui::CalcTextSize(opts[i]);
+        dl->AddText(ImVec2(sp.x + (segW - ts.x) * 0.5f, sp.y + (size.y - ts.y) * 0.5f),
+            ImGui::ColorConvertFloat4ToU32(col), opts[i]);
+        ImGui::PopID();
+    }
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::Dummy(size);
+    return result;
+}
+
+// Small label + value stat used in card headers.
+static void DrawLabelValue(ImVec2 pos, const char* label, const std::string& value, ImVec4 valColor) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddText(pos, ImGui::ColorConvertFloat4ToU32(theme::subtext), label);
+    ImVec2 ls = ImGui::CalcTextSize(label);
+    ImGui::PushFont(theme::fontBrand);
+    dl->AddText(ImVec2(pos.x + ls.x + 8, pos.y - 1), ImGui::ColorConvertFloat4ToU32(valColor), value.c_str());
+    ImGui::PopFont();
+}
+
+// Native open-file dialog for bulk cookie import. Returns L"" if cancelled.
+static std::wstring OpenCookieFileDialog(HWND owner) {
+    wchar_t file[2048] = L"";
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = L"Cookie / text files\0*.txt;*.dat;*.csv;*.log\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 2048;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_EXPLORER;
+    if (GetOpenFileNameW(&ofn)) return std::wstring(file);
+    return L"";
+}
+
+// Imports .ROBLOSECURITY cookies from a file, one per line. Runs on a worker thread.
+static void ImportCookiesFromFile(const std::wstring& path) {
+    std::thread([path]() {
+        FILE* f = _wfopen(path.c_str(), L"rb");
+        if (!f) { backend::Log("[!] Could not open cookie file."); return; }
+        std::string data;
+        char buf[8192]; size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.append(buf, n);
+        fclose(f);
+        int added = 0, tried = 0;
+        size_t start = 0;
+        while (start <= data.size()) {
+            size_t nl = data.find('\n', start);
+            std::string line = data.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+            start = (nl == std::string::npos) ? data.size() + 1 : nl + 1;
+            // trim whitespace/CR
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
+            size_t b = line.find_first_not_of(" \t");
+            if (b == std::string::npos) continue;
+            line = line.substr(b);
+            if (line.empty()) continue;
+            // strip an optional ".ROBLOSECURITY=" prefix
+            const std::string pfx = ".ROBLOSECURITY=";
+            if (line.rfind(pfx, 0) == 0) line = line.substr(pfx.size());
+            if (line.size() < 40) continue; // not a plausible cookie
+            tried++;
+            if (backend::AddAccountFromCookie(line)) added++;
+        }
+        backend::Log("[i] Cookie import: added " + std::to_string(added) + " of " + std::to_string(tried) + ".");
+    }).detach();
+}
+
+// The redesigned main screen. `gotoMultiInstance` is set true when the user
+// clicks the top-right "Multi Instance" button so the caller can switch views.
+static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
+    static char placeIdBuf[32] = "";
+    static bool placeIdInit = false;
+    static int launchDelay = 5;
+    static int relaunchDelay = 30;
+    static int privateServers = 0;      // 0 None, 1 Round-robin, 2 Assigned
+    static bool autoRelaunch = true;
+    static bool replaceRunning = true;
+    static int groupIdx = 0;
+    static std::set<int> selectedAccts;
+    static std::atomic<bool> loginInProgress{ false };
+    static bool wantPasteModal = false;
+    static std::vector<char> pasteBuf(8192, 0);
+
+    if (!placeIdInit) {
+        long long pid = backend::savedPlaceId.load();
+        if (pid > 0) { std::string s = std::to_string(pid); memcpy(placeIdBuf, s.data(), std::min(s.size(), sizeof(placeIdBuf) - 1)); }
+        placeIdInit = true;
+    }
+
+    const float W = ImGui::GetContentRegionAvail().x;
+    const float padX = 22.0f;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // ----- account snapshot (for header stats + table) -----
+    int acctCount = 0;
+    struct RowInfo { std::string name; long long userId; };
+    std::vector<RowInfo> rows;
+    {
+        std::lock_guard<std::mutex> lock(backend::accountsMutex);
+        acctCount = (int)backend::accounts.size();
+        for (auto& a : backend::accounts) rows.push_back({ a.alias.empty() ? a.username : a.alias, a.userId });
+    }
+    int aliveN = backend::CountRobloxProcesses();
+    float cpu = backend::GetCpuUsagePercent();
+
+    // =====================================================================
+    // Header row
+    // =====================================================================
+    ImVec2 hp = ImGui::GetCursorScreenPos();
+    float headY = hp.y + 6.0f;
+
+    // back chevron
+    ImGui::SetCursorScreenPos(ImVec2(hp.x, headY + 6.0f));
+    ImGui::InvisibleButton("##am_back", ImVec2(24, 34));
+    {
+        bool h = ImGui::IsItemHovered();
+        float cx = hp.x + 8, cy = headY + 6.0f + 17;
+        ImU32 col = ImGui::ColorConvertFloat4ToU32(h ? theme::text : theme::subtext);
+        dl->AddLine(ImVec2(cx + 5, cy - 6), ImVec2(cx - 1, cy), col, 2.0f);
+        dl->AddLine(ImVec2(cx - 1, cy), ImVec2(cx + 5, cy + 6), col, 2.0f);
+    }
+
+    // icon badge + title + stats
+    IconBox(ImVec2(hp.x + 30, headY), 46.0f, icon::USER, theme::softAccentBg, theme::accent, 11.0f);
+    ImGui::PushFont(theme::fontTitle);
+    dl->AddText(ImVec2(hp.x + 90, headY - 1), ImGui::ColorConvertFloat4ToU32(theme::text), "Account Manager");
+    ImGui::PopFont();
+    {
+        char stats[256];
+        snprintf(stats, sizeof(stats),
+            "%d accounts   \xE2\x80\xA2   0 connected   \xE2\x80\xA2   0 MB commit   \xE2\x80\xA2   %.1f%% CPU   \xE2\x80\xA2   %d alive   \xE2\x80\xA2   0 dead   \xE2\x80\xA2   %d selected",
+            acctCount, cpu, aliveN, (int)selectedAccts.size());
+        dl->AddText(ImVec2(hp.x + 90, headY + 26), ImGui::ColorConvertFloat4ToU32(theme::subtext), stats);
+    }
+
+    // right-aligned button group (Multi Instance | Overlay | Check Health | Stop | Launch Selected)
+    {
+        struct HBtn { const char* label; unsigned icon; float w; int id; };
+        HBtn btns[] = {
+            { "Multi Instance", icon::ROCKET,       150, 0 },
+            { "Overlay",        icon::BOX,          118, 1 },
+            { "Check Health",   icon::SHIELD_CHECK, 148, 2 },
+            { "Stop",           0,                   92, 3 },
+            { "Launch Selected",icon::PLAY,         170, 4 },
+        };
+        float gap = 10.0f, bh = 40.0f;
+        float total = 0; for (auto& b : btns) total += b.w; total += gap * (int)(sizeof(btns) / sizeof(btns[0]) - 1);
+        float x = hp.x + W - total;
+        for (auto& b : btns) {
+            ImGui::SetCursorScreenPos(ImVec2(x, headY + 3.0f));
+            ImGui::PushID(b.id);
+            bool clicked = b.icon ? SecondaryIconButton(b.icon, b.label, ImVec2(b.w, bh))
+                                  : SecondaryButton(b.label, ImVec2(b.w, bh));
+            ImGui::PopID();
+            if (clicked) {
+                if (b.id == 0) gotoMultiInstance = true;
+                else if (b.id == 3) { std::thread([]() { backend::KillAllRobloxInstances(); }).detach(); }
+                else if (b.id == 4) {
+                    long long pid = backend::savedPlaceId.load();
+                    if (pid <= 0) backend::Log("[!] Set a Place ID first, then Launch Selected.");
+                    else if (selectedAccts.empty()) backend::Log("[!] Select at least one account to launch.");
+                    else {
+                        std::vector<int> idxs(selectedAccts.begin(), selectedAccts.end());
+                        std::thread([idxs, pid]() {
+                            for (int i : idxs) { backend::LaunchAccountIntoPlace(i, pid); Sleep(300); }
+                        }).detach();
+                    }
+                }
+            }
+            x += b.w + gap;
+        }
+    }
+
+    ImGui::SetCursorScreenPos(ImVec2(hp.x, headY + 70.0f));
+
+    // =====================================================================
+    // Add Accounts card
+    // =====================================================================
+    auto beginCard = [&](const char* id, float h) -> ImVec2 {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::panelBg);
+        ImGui::PushStyleColor(ImGuiCol_Border, theme::border);
+        ImGui::BeginChild(id, ImVec2(W, h), true);
+        return ImGui::GetWindowPos();
+    };
+    auto endCard = [&]() { ImGui::EndChild(); ImGui::PopStyleColor(2); ImGui::Dummy(ImVec2(0, 14)); };
+
+    {
+        ImVec2 cp = beginCard("AddAccountsCard", 92);
+        ImGui::PushFont(theme::fontBrand);
+        dl->AddText(ImVec2(cp.x + padX, cp.y + 20), ImGui::ColorConvertFloat4ToU32(theme::text), "Add Accounts");
+        ImGui::PopFont();
+        dl->AddText(ImVec2(cp.x + padX, cp.y + 46), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Browser login or bulk cookie import.");
+
+        struct AB { const char* label; unsigned icon; float w; int id; };
+        AB abs2[] = {
+            { "Login from Browser", icon::GLOBE,     190, 0 },
+            { "Paste Cookies",      icon::FILE_TEXT, 150, 1 },
+            { "Load from File",     icon::FILE_TEXT, 158, 2 },
+        };
+        float gap = 10.0f, bh = 40.0f, total = 0;
+        for (auto& b : abs2) total += b.w; total += gap * 2;
+        float x = cp.x + W - padX - total, y = cp.y + (92 - bh) * 0.5f;
+        for (auto& b : abs2) {
+            ImGui::SetCursorScreenPos(ImVec2(x, y));
+            ImGui::PushID(100 + b.id);
+            bool primary = (b.id == 0);
+            bool clicked = DrawPopButton(b.label, ImVec2(b.w, bh), primary, b.icon);
+            ImGui::PopID();
+            if (clicked) {
+                if (b.id == 0 && !loginInProgress.load()) {
+                    loginInProgress.store(true);
+                    std::thread([]() {
+                        login::ShowRobloxLoginWindow(g_exeDir, [](bool ok, std::string cookie) {
+                            if (ok) backend::AddAccountFromCookie(cookie);
+                            else backend::Log("[i] Login cancelled.");
+                            loginInProgress.store(false);
+                        });
+                    }).detach();
+                } else if (b.id == 1) {
+                    wantPasteModal = true;
+                } else if (b.id == 2) {
+                    std::wstring path = OpenCookieFileDialog(hwnd);
+                    if (!path.empty()) ImportCookiesFromFile(path);
+                }
+            }
+            x += b.w + gap;
+        }
+        endCard();
+    }
+
+    // =====================================================================
+    // Launch Settings card
+    // =====================================================================
+    {
+        ImVec2 cp = beginCard("LaunchSettingsCard", 236);
+        ImGui::PushFont(theme::fontBrand);
+        dl->AddText(ImVec2(cp.x + padX, cp.y + 18), ImGui::ColorConvertFloat4ToU32(theme::text), "Launch Settings");
+        ImGui::PopFont();
+        dl->AddText(ImVec2(cp.x + padX, cp.y + 42), ImGui::ColorConvertFloat4ToU32(theme::subtext), "No group defaults");
+
+        // group dropdown + "Saved automatically"
+        {
+            const char* groups[] = { "No group" };
+            float comboW = 170.0f;
+            float savedW = ImGui::CalcTextSize("Saved automatically").x;
+            float x = cp.x + W - padX - savedW;
+            dl->AddText(ImVec2(x, cp.y + 26), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Saved automatically");
+            x -= 12.0f + comboW;
+            ImGui::SetCursorScreenPos(ImVec2(x, cp.y + 18));
+            ImGui::SetNextItemWidth(comboW);
+            ImGui::Combo("##am_group", &groupIdx, groups, IM_ARRAYSIZE(groups));
+        }
+
+        // labels row
+        float rowY = cp.y + 72;
+        float placeW = (W - padX * 2) * 0.40f;
+        float fieldY = rowY + 22;
+        dl->AddText(ImVec2(cp.x + padX, rowY), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Place ID");
+
+        float delayW = 92.0f;
+        float segW = 300.0f;
+        float rightX = cp.x + W - padX - segW;
+        float relaunchX = rightX - 24 - delayW;
+        float launchX = relaunchX - 24 - delayW;
+        dl->AddText(ImVec2(launchX, rowY), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Launch delay");
+        dl->AddText(ImVec2(relaunchX, rowY), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Relaunch delay");
+        dl->AddText(ImVec2(rightX, rowY), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Private Servers");
+
+        // Place ID input
+        ImGui::SetCursorScreenPos(ImVec2(cp.x + padX, fieldY));
+        ImGui::SetNextItemWidth(placeW);
+        if (ImGui::InputTextWithHint("##am_place", "Enter a Roblox Place ID", placeIdBuf, sizeof(placeIdBuf), ImGuiInputTextFlags_CharsDecimal)) {
+            long long pid = _atoi64(placeIdBuf);
+            backend::SavePlaceId(pid);
+            if (pid > 0) {
+                std::string cookie;
+                { std::lock_guard<std::mutex> lock(backend::accountsMutex);
+                  if (!backend::accounts.empty()) cookie = backend::accounts[0].cookie; }
+                std::thread([pid, cookie]() { backend::FetchPlaceInfo(pid, cookie); }).detach();
+            }
+        }
+
+        // Launch / relaunch delay
+        ImGui::SetCursorScreenPos(ImVec2(launchX, fieldY));
+        ImGui::SetNextItemWidth(delayW - 34);
+        ImGui::InputInt("##am_ld", &launchDelay, 0, 0); if (launchDelay < 0) launchDelay = 0;
+        dl->AddText(ImVec2(launchX + delayW - 28, fieldY + 8), ImGui::ColorConvertFloat4ToU32(theme::subtext), "sec");
+        ImGui::SetCursorScreenPos(ImVec2(relaunchX, fieldY));
+        ImGui::SetNextItemWidth(delayW - 34);
+        ImGui::InputInt("##am_rd", &relaunchDelay, 0, 0); if (relaunchDelay < 0) relaunchDelay = 0;
+        dl->AddText(ImVec2(relaunchX + delayW - 28, fieldY + 8), ImGui::ColorConvertFloat4ToU32(theme::subtext), "sec");
+
+        // Private servers segmented
+        ImGui::SetCursorScreenPos(ImVec2(rightX, fieldY));
+        const char* ps[] = { "None", "Round-robin", "Assigned" };
+        privateServers = SegmentedControl("##am_ps", ps, 3, privateServers, ImVec2(segW, 34));
+
+        // resolved place name chip
+        {
+            std::string placeName; bool loaded = false;
+            { std::lock_guard<std::mutex> lock(backend::placeInfoMutex);
+              if (backend::placeInfo.loaded && backend::placeInfo.placeId == _atoi64(placeIdBuf) && backend::placeInfo.placeId > 0) {
+                  placeName = backend::placeInfo.name; loaded = true; } }
+            float chipY = fieldY + 40;
+            ImVec2 chipMin(cp.x + padX, chipY), chipMax(cp.x + padX + placeW, chipY + 34);
+            dl->AddRectFilled(chipMin, chipMax, ImGui::ColorConvertFloat4ToU32(theme::panelBg2), 8.0f);
+            dl->AddRect(chipMin, chipMax, ImGui::ColorConvertFloat4ToU32(loaded ? theme::good : theme::border), 8.0f, 0, 1.0f);
+            if (loaded) {
+                dl->AddCircleFilled(ImVec2(chipMin.x + 16, chipY + 17), 6.0f, ImGui::ColorConvertFloat4ToU32(theme::good));
+                dl->AddText(ImVec2(chipMin.x + 30, chipY + 9), ImGui::ColorConvertFloat4ToU32(theme::text), placeName.c_str());
+            } else {
+                dl->AddText(ImVec2(chipMin.x + 14, chipY + 9), ImGui::ColorConvertFloat4ToU32(theme::subtext), "No place configured yet.");
+            }
+        }
+
+        // two toggle sub-panels
+        {
+            float togY = fieldY + 84;
+            float togH = 66.0f;
+            float gap = 16.0f;
+            float togW = (W - padX * 2 - gap) * 0.5f;
+            struct Tog { const char* title; const char* desc; bool* val; float x; };
+            Tog togs[] = {
+                { "Auto-relaunch closed instances", "Restart an account after its Roblox window exits unexpectedly.", &autoRelaunch, cp.x + padX },
+                { "Replace running instance",        "Close that account's existing Roblox process before launching again.", &replaceRunning, cp.x + padX + togW + gap },
+            };
+            for (auto& t : togs) {
+                ImVec2 mn(t.x, togY), mx(t.x + togW, togY + togH);
+                dl->AddRectFilled(mn, mx, ImGui::ColorConvertFloat4ToU32(theme::panelBg2), 9.0f);
+                dl->AddRect(mn, mx, ImGui::ColorConvertFloat4ToU32(theme::border), 9.0f, 0, 1.0f);
+                ImGui::PushFont(theme::fontBrand);
+                dl->AddText(ImVec2(mn.x + 16, mn.y + 14), ImGui::ColorConvertFloat4ToU32(theme::text), t.title);
+                ImGui::PopFont();
+                ImGui::PushTextWrapPos(0.0f);
+                dl->AddText(nullptr, 0.0f, ImVec2(mn.x + 16, mn.y + 38), ImGui::ColorConvertFloat4ToU32(theme::subtext), t.desc, nullptr, togW - 90);
+                ImGui::PopTextWrapPos();
+                ImGui::PushID(t.title);
+                ImGui::SetCursorScreenPos(ImVec2(mx.x - 62, mn.y + (togH - 26) * 0.5f));
+                ToggleSwitch("##tg", t.val);
+                ImGui::PopID();
+            }
+        }
+        endCard();
+    }
+
+    // =====================================================================
+    // Accounts table card
+    // =====================================================================
+    {
+        float bodyH = std::max(260.0f, ImGui::GetContentRegionAvail().y - 8.0f);
+        ImVec2 cp = beginCard("AccountsCard", bodyH);
+        ImGui::PushFont(theme::fontBrand);
+        IconBox(ImVec2(cp.x + padX, cp.y + 16), 26.0f, icon::SHARE2, theme::softAccentBg, theme::accent, 7.0f);
+        dl->AddText(ImVec2(cp.x + padX + 36, cp.y + 20), ImGui::ColorConvertFloat4ToU32(theme::text), "Accounts");
+        ImGui::PopFont();
+
+        // right-side header meta
+        {
+            char cc[32]; snprintf(cc, sizeof(cc), "0 connected");
+            char pc[32]; snprintf(pc, sizeof(pc), "%d processes", aliveN);
+            float rightX = cp.x + W - padX;
+            float delW = 84.0f, chkW = 92.0f;
+            ImGui::SetCursorScreenPos(ImVec2(rightX - delW, cp.y + 14));
+            if (SecondaryIconButton(icon::TRASH2, "Delete", ImVec2(delW, 32))) {
+                std::vector<int> idxs(selectedAccts.begin(), selectedAccts.end());
+                std::sort(idxs.rbegin(), idxs.rend());
+                for (int i : idxs) backend::RemoveAccount(i);
+                selectedAccts.clear();
+            }
+            ImGui::SetCursorScreenPos(ImVec2(rightX - delW - 10 - chkW, cp.y + 14));
+            if (SecondaryIconButton(icon::SHIELD_CHECK, "Check", ImVec2(chkW, 32)))
+                std::thread([]() { backend::RefreshSystemStatus(-1); }).detach();
+            float metaX = rightX - delW - 10 - chkW - 20;
+            ImVec2 ps = ImGui::CalcTextSize(pc); metaX -= ps.x;
+            dl->AddText(ImVec2(metaX, cp.y + 20), ImGui::ColorConvertFloat4ToU32(theme::subtext), pc);
+            ImVec2 cs = ImGui::CalcTextSize(cc); metaX -= cs.x + 18;
+            dl->AddText(ImVec2(metaX, cp.y + 20), ImGui::ColorConvertFloat4ToU32(theme::good), cc);
+        }
+
+        // column header
+        float tableTop = cp.y + 58;
+        float colAccount = cp.x + padX + 34;
+        float colConn = cp.x + W * 0.42f;
+        float colMem = cp.x + W * 0.60f;
+        float colCpu = cp.x + W * 0.74f;
+        float colPs = cp.x + W * 0.85f;
+        dl->AddLine(ImVec2(cp.x + 12, tableTop - 8), ImVec2(cp.x + W - 12, tableTop - 8),
+            ImGui::ColorConvertFloat4ToU32(theme::border), 1.0f);
+        dl->AddText(ImVec2(colAccount, tableTop), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Account");
+        dl->AddText(ImVec2(colConn, tableTop), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Connection");
+        dl->AddText(ImVec2(colMem, tableTop), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Memory");
+        dl->AddText(ImVec2(colCpu, tableTop), ImGui::ColorConvertFloat4ToU32(theme::subtext), "CPU");
+        dl->AddText(ImVec2(colPs, tableTop), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Private Server");
+        dl->AddLine(ImVec2(cp.x + 12, tableTop + 24), ImVec2(cp.x + W - 12, tableTop + 24),
+            ImGui::ColorConvertFloat4ToU32(theme::border), 1.0f);
+
+        if (rows.empty()) {
+            // empty state
+            float ey = cp.y + bodyH * 0.5f - 40;
+            IconBox(ImVec2(cp.x + W * 0.5f - 24, ey), 48.0f, icon::USER, theme::panelBg2, theme::subtext, 12.0f);
+            ImGui::PushFont(theme::fontBrand);
+            const char* t1 = "No accounts imported";
+            ImVec2 s1 = ImGui::CalcTextSize(t1);
+            dl->AddText(ImVec2(cp.x + W * 0.5f - s1.x * 0.5f, ey + 62), ImGui::ColorConvertFloat4ToU32(theme::text), t1);
+            ImGui::PopFont();
+            const char* t2 = "Use browser login, paste cookies, or load a cookie file to start.";
+            ImVec2 s2 = ImGui::CalcTextSize(t2);
+            dl->AddText(ImVec2(cp.x + W * 0.5f - s2.x * 0.5f, ey + 88), ImGui::ColorConvertFloat4ToU32(theme::subtext), t2);
+
+            float bw1 = 190, bw2 = 158, gap = 12, bh = 40;
+            float bx = cp.x + W * 0.5f - (bw1 + bw2 + gap) * 0.5f;
+            float by = ey + 118;
+            ImGui::SetCursorScreenPos(ImVec2(bx, by));
+            if (DrawPopButton("Login from Browser", ImVec2(bw1, bh), false, icon::GLOBE) && !loginInProgress.load()) {
+                loginInProgress.store(true);
+                std::thread([]() {
+                    login::ShowRobloxLoginWindow(g_exeDir, [](bool ok, std::string cookie) {
+                        if (ok) backend::AddAccountFromCookie(cookie);
+                        else backend::Log("[i] Login cancelled.");
+                        loginInProgress.store(false);
+                    });
+                }).detach();
+            }
+            ImGui::SetCursorScreenPos(ImVec2(bx + bw1 + gap, by));
+            if (DrawPopButton("Load from File", ImVec2(bw2, bh), false, icon::FILE_TEXT)) {
+                std::wstring path = OpenCookieFileDialog(hwnd);
+                if (!path.empty()) ImportCookiesFromFile(path);
+            }
+        } else {
+            float ry = tableTop + 34;
+            for (int i = 0; i < (int)rows.size(); ++i) {
+                float rowH = 40.0f;
+                ImVec2 rmin(cp.x + 12, ry), rmax(cp.x + W - 12, ry + rowH - 4);
+                bool sel = selectedAccts.count(i) > 0;
+                ImGui::SetCursorScreenPos(rmin);
+                ImGui::PushID(i);
+                ImGui::InvisibleButton("##row", ImVec2(rmax.x - rmin.x, rowH - 4));
+                bool hov = ImGui::IsItemHovered();
+                if (ImGui::IsItemClicked()) { if (sel) selectedAccts.erase(i); else selectedAccts.insert(i); }
+                ImGui::PopID();
+                if (sel || hov)
+                    dl->AddRectFilled(rmin, rmax, ImGui::ColorConvertFloat4ToU32(
+                        sel ? theme::glassActive : theme::glassHover), 7.0f);
+                // checkbox mark
+                ImVec2 cbc(cp.x + padX + 8, ry + rowH * 0.5f - 2);
+                dl->AddRect(ImVec2(cbc.x - 7, cbc.y - 7), ImVec2(cbc.x + 7, cbc.y + 7),
+                    ImGui::ColorConvertFloat4ToU32(sel ? theme::accent : theme::border), 4.0f, 0, 1.5f);
+                if (sel) {
+                    dl->AddLine(ImVec2(cbc.x - 3, cbc.y), ImVec2(cbc.x - 1, cbc.y + 3), ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
+                    dl->AddLine(ImVec2(cbc.x - 1, cbc.y + 3), ImVec2(cbc.x + 4, cbc.y - 3), ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
+                }
+                dl->AddText(ImVec2(colAccount, ry + 9), ImGui::ColorConvertFloat4ToU32(theme::text), rows[i].name.c_str());
+                dl->AddText(ImVec2(colConn, ry + 9), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Idle");
+                dl->AddText(ImVec2(colMem, ry + 9), ImGui::ColorConvertFloat4ToU32(theme::subtext), "-");
+                dl->AddText(ImVec2(colCpu, ry + 9), ImGui::ColorConvertFloat4ToU32(theme::subtext), "-");
+                dl->AddText(ImVec2(colPs, ry + 9), ImGui::ColorConvertFloat4ToU32(theme::subtext), "None");
+                ry += rowH;
+            }
+        }
+        endCard();
+    }
+
+    // ----- Paste Cookies modal -----
+    if (wantPasteModal) { wantPasteModal = false; ImGui::OpenPopup("PasteCookiesModal"); pasteBuf.assign(8192, 0); }
+    ImGui::SetNextWindowSize(ImVec2(460, 300));
+    if (ImGui::BeginPopupModal("PasteCookiesModal", nullptr, ImGuiWindowFlags_NoResize)) {
+        ImGui::TextColored(theme::subtext, "Paste one .ROBLOSECURITY cookie per line.");
+        ImGui::Spacing();
+        ImGui::InputTextMultiline("##paste", pasteBuf.data(), pasteBuf.size(), ImVec2(-1, 180));
+        ImGui::Spacing();
+        if (PrimaryButton("Import", ImVec2(110, 34))) {
+            std::string data(pasteBuf.data());
+            std::thread([data]() {
+                size_t start = 0; int added = 0;
+                while (start <= data.size()) {
+                    size_t nl = data.find('\n', start);
+                    std::string line = data.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
+                    start = (nl == std::string::npos) ? data.size() + 1 : nl + 1;
+                    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+                    const std::string pfx = ".ROBLOSECURITY=";
+                    if (line.rfind(pfx, 0) == 0) line = line.substr(pfx.size());
+                    if (line.size() < 40) continue;
+                    if (backend::AddAccountFromCookie(line)) added++;
+                }
+                backend::Log("[i] Pasted cookies: added " + std::to_string(added) + ".");
+            }).detach();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (SecondaryButton("Cancel", ImVec2(110, 34))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -2657,9 +3219,10 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    int activePage = 3;
-    int lastActivePage = 3;
+    int activePage = 0; // 0 = Account Manager, 1 = Multi-Instance watcher
+    int lastActivePage = 0;
     float pageAnimT = 1.0f; // 0 = just switched, eases to 1 at rest
+    (void)lastActivePage; (void)pageAnimT;
     bool running = true;
     while (running) {
         MSG msg;
@@ -2703,172 +3266,43 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
         DrawTitleBar(hwnd, io2.DisplaySize.x);
 
-        // --- Sidebar ---
-        const float SIDEBAR_W = 218.0f;
-
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::sidebarBg);
-        ImGui::SetCursorScreenPos(ImVec2(0, 0));
-        ImGui::BeginChild("Sidebar", ImVec2(SIDEBAR_W, 0), false);
+        // Redesigned single-screen layout: no sidebar. activePage 0 = Account
+        // Manager, 1 = Multi-Instance watcher (reached via the top-right button).
         {
-            ImGui::Dummy(ImVec2(0, 4));
-            ImVec2 brandPos = ImGui::GetCursorScreenPos();
-            IconBox(ImVec2(brandPos.x + 22.0f, brandPos.y + 4.0f), 52.0f, icon::ROCKET, theme::softAccentBg, theme::accent, 12.0f);
-            ImDrawList* sdl = ImGui::GetWindowDrawList();
-            ImGui::PushFont(theme::fontBrand);
-            sdl->AddText(ImVec2(brandPos.x + 92.0f, brandPos.y + 14.0f), ImGui::ColorConvertFloat4ToU32(theme::text), "Vels Multi Tool");
-            ImGui::PopFont();
-            sdl->AddText(ImVec2(brandPos.x + 92.0f, brandPos.y + 36.0f), ImGui::ColorConvertFloat4ToU32(theme::subtext), "v1.0.0");
-            ImGui::Dummy(ImVec2(0, 54));
-
-            ImGui::Indent(10);
-            ImGui::PushFont(theme::fontBrand);
-            if (NavItem("Multi-Instance", icon::ROCKET, activePage == 0)) activePage = 0;
-            ImGui::Dummy(ImVec2(0, 8));
-            if (NavItem("Cookie Cleaner", icon::COOKIE, activePage == 1)) activePage = 1;
-            ImGui::Dummy(ImVec2(0, 8));
-            if (NavItem("MAC Spoofer", icon::SHARE2, activePage == 2)) activePage = 2;
-            ImGui::Dummy(ImVec2(0, 8));
-            if (NavItem("Accounts", icon::USER, activePage == 3)) activePage = 3;
-            ImGui::PopFont();
-            ImGui::Unindent(10);
-
-            // --- Footer "about" card, pinned to the bottom of the sidebar ---
-            float footerH = 68.0f;
-            float avail = ImGui::GetContentRegionAvail().y;
-            if (avail > footerH) ImGui::Dummy(ImVec2(0, avail - footerH - 16));
-            ImGui::Indent(10);
-            ImVec2 fp = ImGui::GetCursorScreenPos();
-            ImVec2 fSize(SIDEBAR_W - 20, footerH);
-            ImDrawList* fdl = ImGui::GetWindowDrawList();
-
-            ImGui::InvisibleButton("##community_card", fSize);
-            bool communityHover = ImGui::IsItemHovered();
-            ImGuiID communityId = ImGui::GetID("##community_card");
-            float communityAnim = std::max(PopAnim(communityId, communityHover, false), 0.0f);
-
-            // Slow, faint ambient pulse so the card reads as "alive" without
-            // dominating the sidebar, with a clearer (but still tasteful)
-            // boost while hovered. The "Sidebar" child window clips draws to
-            // its own rect by default, which used to hard-cut the halo into
-            // an ugly square ring right at the card's edge - expand the clip
-            // rect for just this draw so the bloom can fall off naturally
-            // into the margin around the card instead.
-            float pulse = 0.5f + 0.5f * (0.5f + 0.5f * sinf((float)ImGui::GetTime() * 1.4f));
-            float glowAlpha = (0.07f + 0.03f * pulse) + 0.16f * communityAnim;
-            float glowSpread = 9.0f + 5.0f * communityAnim;
-
-            ImVec2 clipPad(glowSpread + 6.0f, glowSpread + 6.0f);
-            fdl->PushClipRect(ImVec2(fp.x - clipPad.x, fp.y - clipPad.y),
-                ImVec2(fp.x + fSize.x + clipPad.x, fp.y + fSize.y + clipPad.y), false);
-            DrawSoftRectGlow(fdl, fp, ImVec2(fp.x + fSize.x, fp.y + fSize.y), 12.0f, glowSpread, glowAlpha, theme::accent);
-            fdl->PopClipRect();
-
-            // Single flat tinted fill (not a partial-height wash) so there's
-            // no hard seam between a "purple half" and a "gray half" - the
-            // whole card is one uniform color that just deepens on hover.
-            fdl->AddRectFilled(fp, ImVec2(fp.x + fSize.x, fp.y + fSize.y),
-                ImGui::ColorConvertFloat4ToU32(theme::panelBg), 12.0f);
-            fdl->AddRectFilled(fp, ImVec2(fp.x + fSize.x, fp.y + fSize.y),
-                ImGui::ColorConvertFloat4ToU32(ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.06f + 0.06f * communityAnim)),
-                12.0f);
-            fdl->AddRect(fp, ImVec2(fp.x + fSize.x, fp.y + fSize.y),
-                ImGui::ColorConvertFloat4ToU32(ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.22f + 0.35f * communityAnim)),
-                12.0f, 0, 1.2f);
-
-            // A small, tight glow right behind the icon badge - a focal
-            // point instead of one big halo washing out the whole card.
-            ImVec2 iconPos(fp.x + 12, fp.y + (fSize.y - 42.0f) * 0.5f);
-            DrawSoftRectGlow(fdl, iconPos, ImVec2(iconPos.x + 42.0f, iconPos.y + 42.0f), 13.0f, 5.0f + 3.0f * communityAnim,
-                0.16f + 0.20f * communityAnim, theme::accent);
-            IconBox(iconPos, 42.0f, icon::SHIELD,
-                ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 1.0f), theme::accentText, 13.0f);
-
-            ImGui::PushFont(theme::fontBrand);
-            fdl->AddText(ImVec2(fp.x + 66, fp.y + 14), ImGui::ColorConvertFloat4ToU32(theme::text), "Vels Multi Tool");
-            ImGui::PopFont();
-            fdl->AddText(ImVec2(fp.x + 66, fp.y + 36), ImGui::ColorConvertFloat4ToU32(theme::subtext), "Free Edition");
-
-            std::string chevron = icon::Str(icon::CHEVRON_RIGHT);
-            ImGui::PushFont(theme::fontIcon);
-            ImVec2 chevSize = ImGui::CalcTextSize(chevron.c_str());
-            ImVec4 chevColor(theme::accent.x, theme::accent.y, theme::accent.z, 0.55f + 0.45f * communityAnim);
-            fdl->AddText(ImVec2(fp.x + fSize.x - 12 - chevSize.x + 3.0f * communityAnim, fp.y + (fSize.y - chevSize.y) * 0.5f),
-                ImGui::ColorConvertFloat4ToU32(chevColor), chevron.c_str());
-            ImGui::PopFont();
-
-            ImGui::Unindent(10);
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-
-        // Tab-switch animation: new page eases up into place from a slight
-        // offset instead of snapping straight in.
-        if (g_pendingNavPage >= 0) {
-            activePage = g_pendingNavPage;
-            g_pendingNavPage = -1;
-        }
-        if (activePage != lastActivePage) {
-            lastActivePage = activePage;
-            pageAnimT = 0.0f;
-            if (activePage == 1 && !backend::browserCookieScanning.load()) {
-                std::thread(backend::ScanBrowserCookies).detach();
-            }
-        }
-        pageAnimT += (1.0f - pageAnimT) * std::min(1.0f, io2.DeltaTime * 10.0f);
-        float pageSlide = (1.0f - pageAnimT) * 18.0f;
-
-        ImGui::SameLine();
-        ImGui::SetCursorScreenPos(ImVec2(SIDEBAR_W, (float)TITLEBAR_H));
-
-        // --- Content (transparent - only specific cards inside should have a visible fill) ---
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-        ImGui::BeginChild("Content", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar);
-        {
-            ImGui::Dummy(ImVec2(0, 8));
-            ImGui::Indent(24);
-            float innerW = ImGui::GetContentRegionAvail().x - 24;
-            float innerH = ImGui::GetContentRegionAvail().y - 8;
-            // Small horizontal padding so button hover glow/scale has room to
-            // breathe before it hits this child's clip rect (otherwise the
-            // glow gets hard-clipped on the left, looking choppy).
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 0));
-            ImGui::BeginChild("ContentInner", ImVec2(innerW, innerH), false, ImGuiWindowFlags_NoScrollbar);
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + pageSlide);
-            switch (activePage) {
-            case 0: PageMultiInstance(); break;
-            case 1: PageCookieCleaner(); break;
-            case 2: PageMacSpoofer(); break;
-            case 3: PageAccounts(hwnd); break;
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28, 18));
+            ImGui::SetCursorScreenPos(ImVec2(0, (float)TITLEBAR_H));
+            ImGui::BeginChild("Content", ImVec2(0, 0), false);
+            if (activePage == 1) {
+                if (SecondaryIconButton(icon::CHEVRON_RIGHT, "Back to Accounts", ImVec2(200, 38)))
+                    activePage = 0;
+                ImGui::Dummy(ImVec2(0, 10));
+                PageMultiInstance();
+            } else {
+                bool gotoMulti = false;
+                PageAccountManager(hwnd, gotoMulti);
+                if (gotoMulti) activePage = 1;
             }
             ImGui::EndChild();
             ImGui::PopStyleVar();
-            ImGui::Unindent(24);
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+            ImGui::PopStyleColor();
 
-        {
             ImDrawList* rootDl = ImGui::GetWindowDrawList();
-            ImU32 border = ImGui::ColorConvertFloat4ToU32(theme::border);
-            rootDl->AddLine(ImVec2(SIDEBAR_W - 1.0f, 0.0f), ImVec2(SIDEBAR_W - 1.0f, io2.DisplaySize.y),
-                ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 0.045f)), 3.0f);
-            rootDl->AddLine(ImVec2(SIDEBAR_W + 2.0f, 0.0f), ImVec2(SIDEBAR_W + 2.0f, io2.DisplaySize.y),
-                ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 0.025f)), 5.0f);
-            rootDl->AddLine(ImVec2(SIDEBAR_W, 0.0f), ImVec2(SIDEBAR_W, io2.DisplaySize.y), border, 1.0f);
             rootDl->AddRect(ImVec2(0.5f, 0.5f), ImVec2(io2.DisplaySize.x - 0.5f, io2.DisplaySize.y - 0.5f),
-                border, 12.0f, 0, 1.0f);
+                ImGui::ColorConvertFloat4ToU32(theme::border), 12.0f, 0, 1.0f);
         }
-
         ImGui::End();
         ImGui::Render();
 
-        const float clearColor[4] = { theme::bg.x, theme::bg.y, theme::bg.z, 1.0f };
+        const float clearColorNew[4] = { theme::bg.x, theme::bg.y, theme::bg.z, 1.0f };
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColor);
+        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColorNew);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-
-        HRESULT hr = g_pSwapChain->Present(1, 0);
-        g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
+        {
+            HRESULT hrp = g_pSwapChain->Present(1, 0);
+            g_SwapChainOccluded = (hrp == DXGI_STATUS_OCCLUDED);
+        }
+        continue;
     }
 
     backend::Shutdown();

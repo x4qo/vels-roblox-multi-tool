@@ -32,7 +32,7 @@ echo Compiling - this takes 20-60+ seconds with no output, that's normal, g++ do
   src\imgui\backends\imgui_impl_win32.cpp src\imgui\backends\imgui_impl_dx11.cpp ^
   src\app_icon.res ^
   -o VelsMultiTool.exe ^
-  -ld3d11 -ldxgi -ld3dcompiler -lshell32 -liphlpapi -luser32 -lgdi32 -ldwmapi -lwinhttp -lws2_32 -lcrypt32 -lole32 -lwindowscodecs ^
+  -ld3d11 -ldxgi -ld3dcompiler -lshell32 -lcomdlg32 -liphlpapi -luser32 -lgdi32 -ldwmapi -lwinhttp -lws2_32 -lcrypt32 -lole32 -lwindowscodecs ^
   -static-libgcc -static-libstdc++ -static
 
 if errorlevel 1 (
