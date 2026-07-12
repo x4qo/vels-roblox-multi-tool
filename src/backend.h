@@ -145,6 +145,10 @@ void SetAccountAlias(int index, const std::string& alias);
 // launches the Roblox client into the given place via the roblox-player: protocol.
 void LaunchAccountIntoPlace(int index, long long placeId);
 
+// Launches a separate browser instance with its own per-account profile, injects
+// the account's cookie, and opens roblox.com logged in. Call from a worker thread.
+void OpenAccountWeb(int index);
+
 // Populates accounts[index]'s friends/followers/following/robux/join-date fields
 // from Roblox's API. Runs synchronously, call from a worker thread.
 void FetchAccountStats(int index);

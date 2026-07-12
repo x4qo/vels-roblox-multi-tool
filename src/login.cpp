@@ -316,4 +316,125 @@ void ShowRobloxLoginWindow(const std::wstring& exeDir,
     onComplete(success, success ? foundCookie : "");
 }
 
+// Minimal JSON string escaper for the cookie value we inject via CDP. A
+// .ROBLOSECURITY value is base64-ish (no quotes/backslashes in practice), but we
+// escape defensively so a stray character can't break the JSON command.
+static std::string JsonEscape(const std::string& s) {
+    std::string o;
+    o.reserve(s.size() + 8);
+    for (char c : s) {
+        switch (c) {
+            case '"':  o += "\\\""; break;
+            case '\\': o += "\\\\"; break;
+            case '\n': o += "\\n"; break;
+            case '\r': o += "\\r"; break;
+            case '\t': o += "\\t"; break;
+            default:
+                if ((unsigned char)c >= 0x20) o += c; // drop other control chars
+                break;
+        }
+    }
+    return o;
+}
+
+void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie,
+    long long userId, const std::string& username) {
+
+    if (cookie.empty()) {
+        backend::Log("[!] This account has no saved cookie to open the web with.");
+        return;
+    }
+
+    std::wstring chromePath = FindChromeExe();
+    if (chromePath.empty()) {
+        backend::Log("[!] Google Chrome wasn't found on this PC.");
+        return;
+    }
+
+    // Persistent, per-account profile so each account gets its own isolated
+    // browser instance and stays logged in between opens.
+    std::wstring profileDir = exeDir + L"\\web_profiles\\acct_" +
+        (userId > 0 ? std::to_wstring(userId) : L"default");
+    int port = PickFreeLocalPort();
+    if (port == 0) {
+        backend::Log("[!] Could not reserve a local Chrome debugging port.");
+        return;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(profileDir, ec);
+
+    std::wstring cmdLine = L"\"" + chromePath + L"\" --remote-debugging-port=" + std::to_wstring(port) +
+        L" --user-data-dir=\"" + profileDir +
+        L"\" --no-first-run --no-default-browser-check --new-window \"about:blank\"";
+
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+    std::vector<wchar_t> cmdBuf(cmdLine.begin(), cmdLine.end());
+    cmdBuf.push_back(0);
+
+    if (!CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        backend::Log("[!] Failed to launch Chrome.");
+        return;
+    }
+    CloseHandle(pi.hThread);
+    // Intentionally leave the browser running and the profile on disk; just drop
+    // our own handle to the process.
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+
+    backend::Log("[i] Opened a browser window for " + username + ".");
+
+    std::wstring wsPath;
+    for (int i = 0; i < 100; ++i) {
+        wsPath = ExtractPageWebSocketPath(HttpGetLocal(port, L"/json/list"));
+        if (!wsPath.empty()) break;
+        Sleep(100);
+    }
+    if (wsPath.empty()) {
+        // Most likely this account's profile was already open in another window;
+        // the browser is up, we just couldn't drive it to (re)inject the cookie.
+        backend::Log("[!] Browser is open, but its automation port wasn't reachable to set the cookie.");
+        return;
+    }
+
+    HINTERNET hSession = nullptr, hConnect = nullptr;
+    HINTERNET hWebSocket = OpenLocalWebSocket(port, wsPath, hSession, hConnect);
+    if (!hWebSocket) {
+        if (hConnect) WinHttpCloseHandle(hConnect);
+        if (hSession) WinHttpCloseHandle(hSession);
+        backend::Log("[!] Could not connect to Chrome to set the session cookie.");
+        return;
+    }
+
+    int msgId = 1;
+    auto sendCmd = [&](const std::string& method, const std::string& params) -> bool {
+        int id = msgId++;
+        std::string req = "{\"id\":" + std::to_string(id) + ",\"method\":\"" + method + "\"";
+        if (!params.empty()) req += ",\"params\":" + params;
+        req += "}";
+        if (!WsSendText(hWebSocket, req)) return false;
+        std::string idPat = "\"id\":" + std::to_string(id);
+        for (int i = 0; i < 60; ++i) { // skip interleaved CDP events until our reply
+            std::string resp;
+            if (!WsReceiveText(hWebSocket, resp)) return false;
+            if (resp.find(idPat) != std::string::npos) return true;
+        }
+        return false;
+    };
+
+    sendCmd("Network.enable", "");
+    std::string cookieParams =
+        std::string("{\"name\":\".ROBLOSECURITY\",\"value\":\"") + JsonEscape(cookie) +
+        "\",\"domain\":\".roblox.com\",\"path\":\"/\",\"secure\":true,\"httpOnly\":true}";
+    bool cookieOk = sendCmd("Network.setCookie", cookieParams);
+    sendCmd("Page.navigate", "{\"url\":\"https://www.roblox.com/home\"}");
+
+    WinHttpCloseHandle(hWebSocket);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+
+    if (cookieOk) backend::Log("[v] Signed the browser into " + username + ".");
+    else backend::Log("[!] Opened the browser but couldn't confirm the session cookie for " + username + ".");
+}
+
 } // namespace login

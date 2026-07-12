@@ -316,15 +316,15 @@ namespace theme {
             panelBg2 = ImVec4(0.120f, 0.126f, 0.168f, 1.00f);
             glassFill = ImVec4(0.135f, 0.140f, 0.185f, 1.00f);
             glassHover = ImVec4(0.165f, 0.170f, 0.225f, 1.00f);
-            glassActive = ImVec4(0.210f, 0.170f, 0.420f, 1.00f);
-            accent = ImVec4(0.455f, 0.260f, 0.925f, 1.00f);
-            accentHov = ImVec4(0.540f, 0.340f, 0.985f, 1.00f);
-            accentAct = ImVec4(0.365f, 0.195f, 0.785f, 1.00f);
+            glassActive = ImVec4(0.150f, 0.260f, 0.420f, 1.00f);
+            accent = ImVec4(0.290f, 0.620f, 0.945f, 1.00f);
+            accentHov = ImVec4(0.400f, 0.710f, 0.995f, 1.00f);
+            accentAct = ImVec4(0.220f, 0.520f, 0.855f, 1.00f);
             accentText = ImVec4(1.000f, 1.000f, 1.000f, 1.00f);
             text = ImVec4(0.940f, 0.945f, 0.970f, 1.00f);
             subtext = ImVec4(0.645f, 0.675f, 0.780f, 1.00f);
             border = ImVec4(0.210f, 0.220f, 0.290f, 1.00f);
-            softAccentBg = ImVec4(0.455f, 0.260f, 0.925f, 0.18f);
+            softAccentBg = ImVec4(0.290f, 0.620f, 0.945f, 0.18f);
             titlebarBg = ImVec4(0.050f, 0.052f, 0.070f, 0.98f);
             cardLine = ImVec4(1, 1, 1, 0.06f);
         } else {
@@ -333,16 +333,16 @@ namespace theme {
             panelBg = ImVec4(1.000f, 1.000f, 1.000f, 0.98f);
             panelBg2 = ImVec4(0.970f, 0.974f, 0.990f, 1.00f);
             glassFill = ImVec4(0.976f, 0.978f, 0.992f, 1.00f);
-            glassHover = ImVec4(0.940f, 0.930f, 0.995f, 1.00f);
-            glassActive = ImVec4(0.900f, 0.875f, 0.990f, 1.00f);
-            accent = ImVec4(0.455f, 0.260f, 0.925f, 1.00f);
-            accentHov = ImVec4(0.535f, 0.350f, 0.965f, 1.00f);
-            accentAct = ImVec4(0.370f, 0.205f, 0.790f, 1.00f);
+            glassHover = ImVec4(0.925f, 0.955f, 0.995f, 1.00f);
+            glassActive = ImVec4(0.870f, 0.925f, 0.990f, 1.00f);
+            accent = ImVec4(0.235f, 0.585f, 0.925f, 1.00f);
+            accentHov = ImVec4(0.330f, 0.660f, 0.965f, 1.00f);
+            accentAct = ImVec4(0.180f, 0.490f, 0.830f, 1.00f);
             accentText = ImVec4(1.000f, 1.000f, 1.000f, 1.00f);
             text = ImVec4(0.100f, 0.115f, 0.180f, 1.00f);
             subtext = ImVec4(0.410f, 0.450f, 0.580f, 1.00f);
             border = ImVec4(0.850f, 0.865f, 0.920f, 1.00f);
-            softAccentBg = ImVec4(0.455f, 0.260f, 0.925f, 0.10f);
+            softAccentBg = ImVec4(0.235f, 0.585f, 0.925f, 0.10f);
             titlebarBg = ImVec4(0.985f, 0.987f, 0.996f, 0.98f);
             cardLine = ImVec4(1, 1, 1, 0.75f);
         }
@@ -650,11 +650,20 @@ static bool DrawPopButton(const char* label, ImVec2 size, bool primary, unsigned
     ImGuiID id = ImGui::GetID(label);
     ImVec2 pos = ImGui::GetCursorScreenPos();
 
+    // BeginDisabled() only lowers style.Alpha; since this button paints itself
+    // through the draw list with hard-coded alpha, a disabled button would
+    // otherwise look fully active yet do nothing on click. Detect the reduced
+    // alpha and (a) grey the button out and (b) suppress the hover glow/pop so
+    // the disabled state is honest and obvious.
+    float uiAlpha = ImGui::GetStyle().Alpha;
+    bool disabled = uiAlpha < 0.999f;
+
     ImGui::InvisibleButton(label, size);
     bool hovered = ImGui::IsItemHovered();
     bool pressed = ImGui::IsItemActive();
     bool clicked = ImGui::IsItemClicked();
-    float anim = PopAnim(id, hovered, pressed);
+    float anim = disabled ? 0.0f : PopAnim(id, hovered, pressed);
+    if (disabled) { hovered = false; pressed = false; }
     float hoverAnim = std::max(anim, 0.0f);
     float pressAnim = std::max(-anim, 0.0f);
 
@@ -672,19 +681,21 @@ static bool DrawPopButton(const char* label, ImVec2 size, bool primary, unsigned
         DrawSoftRectGlow(dl, rmin, rmax, 9.0f, 15.0f * hoverAnim, (primary ? 0.45f : 0.30f) * hoverAnim, theme::accent);
     }
 
+    auto fade = [uiAlpha](ImVec4 c) { c.w *= uiAlpha; return c; };
+
     if (primary) {
         ImVec4 col = hoverLift > 0.001f ? theme::accentHov : theme::accent;
-        dl->AddRectFilled(rmin, rmax, ImGui::ColorConvertFloat4ToU32(col), 9.0f);
+        dl->AddRectFilled(rmin, rmax, ImGui::ColorConvertFloat4ToU32(fade(col)), 9.0f);
     } else {
         ImVec4 fill = hoverLift > 0.001f ? theme::glassHover : theme::panelBg;
-        dl->AddRectFilled(rmin, rmax, ImGui::ColorConvertFloat4ToU32(fill), 9.0f);
+        dl->AddRectFilled(rmin, rmax, ImGui::ColorConvertFloat4ToU32(fade(fill)), 9.0f);
         ImVec4 borderCol = hoverAnim > 0.01f
             ? ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.45f + 0.45f * hoverAnim)
             : theme::border;
-        dl->AddRect(rmin, rmax, ImGui::ColorConvertFloat4ToU32(borderCol), 9.0f, 0, 2.4f);
+        dl->AddRect(rmin, rmax, ImGui::ColorConvertFloat4ToU32(fade(borderCol)), 9.0f, 0, 2.4f);
     }
 
-    ImVec4 textColor = primary ? theme::accentText : theme::text;
+    ImVec4 textColor = fade(primary ? theme::accentText : theme::text);
     ImVec2 textSize = ImGui::CalcTextSize(label);
 
     if (iconCp != 0) {
@@ -700,13 +711,13 @@ static bool DrawPopButton(const char* label, ImVec2 size, bool primary, unsigned
 
         if (primary && iconCp == icon::PLAY) {
             ImVec2 c(startX + 9.0f, center.y);
-            dl->AddCircleFilled(c, 9.0f, ImGui::ColorConvertFloat4ToU32(theme::accentText), 24);
+            dl->AddCircleFilled(c, 9.0f, ImGui::ColorConvertFloat4ToU32(fade(theme::accentText)), 24);
             ImVec2 tri[] = {
                 ImVec2(c.x - 2.5f, c.y - 4.5f),
                 ImVec2(c.x - 2.5f, c.y + 4.5f),
                 ImVec2(c.x + 4.8f, c.y),
             };
-            dl->AddConvexPolyFilled(tri, 3, ImGui::ColorConvertFloat4ToU32(theme::accent));
+            dl->AddConvexPolyFilled(tri, 3, ImGui::ColorConvertFloat4ToU32(fade(theme::accent)));
         } else {
             ImGui::PushFont(theme::fontIcon);
             dl->AddText(ImVec2(startX, center.y - glyphSize.y * 0.5f), ImGui::ColorConvertFloat4ToU32(textColor), glyph.c_str());
@@ -749,53 +760,49 @@ static bool NavItem(const char* label, unsigned iconCp, bool active) {
     float anim = active ? 1.0f : hoverAnim;
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    // Same pill bounds for hover and active so the selected state reads as a
-    // brighter version of the same shape instead of a separate full-bleed block.
-    ImVec2 pillMin(pos.x + 7.0f, pos.y + 7.0f);
-    ImVec2 pillMax(pos.x + size.x - 7.0f, pos.y + size.y - 7.0f);
+    ImVec2 pillMin(pos.x + 8.0f, pos.y + 6.0f);
+    ImVec2 pillMax(pos.x + size.x - 8.0f, pos.y + size.y - 6.0f);
+    const float rounding = 10.0f;
 
-    // Glow is purely a hover response here, not a permanent ambient halo -
-    // a glow that never turns off on the active tab just reads as "too
-    // purple" rather than as feedback. Resting active state stays the
-    // plain, clean softAccentBg pill; hovering (active or not) blooms it.
-    float glowAlpha = (active ? 0.22f : 0.16f) * hoverAnim;
-    if (glowAlpha > 0.005f) {
-        DrawSoftRectGlow(dl, pillMin, pillMax, 9.0f, 8.0f + 4.0f * hoverAnim, glowAlpha, theme::accent);
+    // One clean background layer instead of the old glow+fill+border+circle
+    // stack (which doubled up on edges and animated on different curves, so it
+    // read as choppy). Active is a steady soft-accent tint that brightens a
+    // touch on hover; an inactive item just fades in a faint accent wash.
+    float fillAlpha = active ? (0.15f + 0.07f * hoverAnim) : (0.075f * hoverAnim);
+    if (fillAlpha > 0.004f) {
+        ImVec4 fill(theme::accent.x, theme::accent.y, theme::accent.z, fillAlpha);
+        dl->AddRectFilled(pillMin, pillMax, ImGui::ColorConvertFloat4ToU32(fill), rounding);
     }
 
-    if (anim > 0.001f) {
-        if (active) {
-            dl->AddRectFilled(pillMin, pillMax, ImGui::ColorConvertFloat4ToU32(theme::softAccentBg), 9.0f);
-            dl->AddRect(pillMin, pillMax, ImGui::ColorConvertFloat4ToU32(ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.18f + 0.20f * hoverAnim)), 9.0f, 0, 1.0f);
-            dl->AddRectFilled(ImVec2(pos.x - 1.0f, pos.y + 16.0f), ImVec2(pos.x + 3.0f, pos.y + size.y - 16.0f),
-                ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
-        } else {
-            dl->AddRectFilled(pillMin, pillMax, ImGui::ColorConvertFloat4ToU32(theme::glassHover), 9.0f);
-            dl->AddRect(pillMin, pillMax, ImGui::ColorConvertFloat4ToU32(ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.35f * hoverAnim)), 9.0f, 0, 1.0f);
-        }
+    // Crisp vertically-centred accent bar marks the selected item. It grows in
+    // from zero as the active state settles so switching tabs glides.
+    if (anim > 0.001f && active) {
+        float barH = (size.y - 22.0f) * anim;
+        float cy = pos.y + size.y * 0.5f;
+        ImVec2 barMin(pos.x + 2.0f, cy - barH * 0.5f);
+        ImVec2 barMax(pos.x + 5.5f, cy + barH * 0.5f);
+        dl->AddRectFilled(barMin, barMax, ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
     }
 
-    ImVec4 textColor = active ? theme::accent : ImVec4(
-        theme::subtext.x + (theme::text.x - theme::subtext.x) * anim * 0.5f,
-        theme::subtext.y + (theme::text.y - theme::subtext.y) * anim * 0.5f,
-        theme::subtext.z + (theme::text.z - theme::subtext.z) * anim * 0.5f, 1.0f);
+    // Icon + label share one colour that eases subtext -> text on hover, or sits
+    // on the accent when active. No separate icon disc anymore.
+    float colorT = active ? 1.0f : hoverAnim;
+    ImVec4 rest = active ? theme::accent : theme::subtext;
+    ImVec4 hot = active ? theme::accent : theme::text;
+    ImVec4 fg(rest.x + (hot.x - rest.x) * colorT,
+              rest.y + (hot.y - rest.y) * colorT,
+              rest.z + (hot.z - rest.z) * colorT, 1.0f);
+    ImU32 fgU32 = ImGui::ColorConvertFloat4ToU32(fg);
 
     std::string glyph = icon::Str(iconCp);
     ImGui::PushFont(theme::fontIconLg);
     ImVec2 glyphSize = ImGui::CalcTextSize(glyph.c_str());
-    ImVec4 iconColor = active ? theme::accent : textColor;
-    if (!active && anim > 0.001f) {
-        dl->AddCircleFilled(ImVec2(pos.x + 28.0f + glyphSize.x * 0.5f, pos.y + size.y * 0.5f), 18.0f,
-            ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, 0.055f * anim)), 24);
-    }
-    dl->AddText(ImVec2(pos.x + 28.0f, pos.y + (size.y - glyphSize.y) * 0.5f),
-        ImGui::ColorConvertFloat4ToU32(iconColor), glyph.c_str());
+    dl->AddText(ImVec2(pos.x + 28.0f, pos.y + (size.y - glyphSize.y) * 0.5f), fgU32, glyph.c_str());
     ImGui::PopFont();
 
     ImVec2 textSize = ImGui::CalcTextSize(label);
-    float textOffsetX = 74.0f + anim * 2.0f;
-    ImVec2 textPos(pos.x + textOffsetX, pos.y + (size.y - textSize.y) * 0.5f);
-    dl->AddText(textPos, ImGui::ColorConvertFloat4ToU32(textColor), label);
+    ImVec2 textPos(pos.x + 74.0f, pos.y + (size.y - textSize.y) * 0.5f);
+    dl->AddText(textPos, fgU32, label);
 
     return clicked;
 }
@@ -809,7 +816,15 @@ static void SectionTitle(unsigned iconCp, const char* title, const char* desc) {
     ImGui::TextColored(theme::text, "%s", title);
     ImGui::PopFont();
     ImGui::SetCursorScreenPos(ImVec2(pos.x + 90, pos.y + 42));
-    ImGui::PushTextWrapPos(ImGui::GetCursorScreenPos().x + 480);
+    // Clamp the wrap so the description never runs underneath the top-right
+    // action buttons (e.g. "Open Web" / "Launch Roblox" on the Accounts tab).
+    float descX = ImGui::GetCursorScreenPos().x;
+    float winRight = ImGui::GetWindowPos().x + ImGui::GetWindowSize().x;
+    float wrapX = descX + 480;
+    float safeRight = winRight - 400;
+    if (wrapX > safeRight) wrapX = safeRight;
+    if (wrapX < descX + 160) wrapX = descX + 160;
+    ImGui::PushTextWrapPos(wrapX);
     ImGui::TextColored(theme::subtext, "%s", desc);
     ImGui::PopTextWrapPos();
 
@@ -1158,7 +1173,7 @@ static void DrawCardHeader(ImVec2 pos, unsigned iconCp, const char* title) {
 }
 
 static void DrawMultiInstanceQuickNav() {
-    const ImVec4 purple(0.62f, 0.50f, 0.97f, 1.0f);
+    const ImVec4 purple(0.36f, 0.66f, 0.96f, 1.0f);
     const ImVec4 blue(0.40f, 0.64f, 0.98f, 1.0f);
     ImVec2 pos = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
@@ -1187,7 +1202,7 @@ static void DrawMultiInstanceQuickNav() {
 
 static void DrawMultiInstanceOverview() {
     const ImVec4 colorRed(0.94f, 0.34f, 0.34f, 1.0f);
-    const ImVec4 colorPurple(0.62f, 0.50f, 0.97f, 1.0f);
+    const ImVec4 colorPurple(0.36f, 0.66f, 0.96f, 1.0f);
     const ImVec4 colorGreen = theme::good;
 
     float fullW = ImGui::GetContentRegionAvail().x;
@@ -1477,7 +1492,7 @@ static void DrawMacStatusCard(float height) {
             }
         }
 
-        const ImVec4 colorPurple(0.62f, 0.50f, 0.97f, 1.0f);
+        const ImVec4 colorPurple(0.36f, 0.66f, 0.96f, 1.0f);
         const ImVec4 colorBlue(0.40f, 0.64f, 0.98f, 1.0f);
         const ImVec4& colorGreen = theme::good;
 
@@ -2083,7 +2098,7 @@ static void PageAccounts(HWND hwnd) {
     static bool wantOpenAliasModal = false;
     static bool wantOpenPasswordModal = false;
 
-    SectionTitle(icon::USER, "Account Launcher", "Manage your Roblox accounts and launch experiences seamlessly.");
+    SectionTitle(icon::USER, "Account Launcher", "Manage and launch your Roblox accounts.");
     {
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
@@ -2095,14 +2110,40 @@ static void PageAccounts(HWND hwnd) {
             canQuickLaunch = canQuickLaunch && selected >= 0 && selected < (int)backend::accounts.size();
         }
         ImGui::SetCursorScreenPos(ImVec2(winPos.x + winSize.x - 220.0f, winPos.y + 20.0f));
-        ImGui::BeginDisabled(!canQuickLaunch);
         ImGui::PushID("quick_launch_top");
+        // Kept clickable even when prerequisites are missing - a disabled ImGui
+        // item can't be hovered or pressed at all, which reads as "the button is
+        // broken". Instead we validate on click and tell the user what's needed.
         if (PrimaryIconButton(icon::PLAY, "Launch Roblox", ImVec2(190.0f, 42.0f))) {
-            int idx = selected;
-            std::thread([idx, pid]() { backend::LaunchAccountIntoPlace(idx, pid); }).detach();
+            if (!canQuickLaunch) {
+                backend::Log("[!] Select an account and set a Place ID first, then Launch Roblox.");
+            } else {
+                int idx = selected;
+                std::thread([idx, pid]() { backend::LaunchAccountIntoPlace(idx, pid); }).detach();
+            }
         }
         ImGui::PopID();
-        ImGui::EndDisabled();
+
+        // Open Web: launch a separate browser instance signed into the selected
+        // account. Only needs an account with a cookie - no Place ID required.
+        bool canOpenWeb = false;
+        {
+            std::lock_guard<std::mutex> lock(backend::accountsMutex);
+            canOpenWeb = selected >= 0 && selected < (int)backend::accounts.size()
+                         && !backend::accounts[selected].cookie.empty();
+        }
+        ImGui::SetCursorScreenPos(ImVec2(winPos.x + winSize.x - 380.0f, winPos.y + 20.0f));
+        ImGui::PushID("open_web_top");
+        if (SecondaryIconButton(icon::GLOBE, "Open Web", ImVec2(150.0f, 42.0f))) {
+            if (!canOpenWeb) {
+                backend::Log("[!] Add and select an account first, then Open Web.");
+            } else {
+                int idx = selected;
+                std::thread([idx]() { backend::OpenAccountWeb(idx); }).detach();
+            }
+        }
+        ImGui::PopID();
+
         ImGui::SetCursorScreenPos(oldCursor);
     }
 
@@ -2161,6 +2202,10 @@ static void PageAccounts(HWND hwnd) {
                         if (ImGui::MenuItem("Copy User:Pass", nullptr, false, hasPassword)) { ImGui::SetClipboardText(combo.c_str()); backend::Log("[v] Copied user:pass for " + a.username); }
                         std::string cookieStr = ".ROBLOSECURITY=" + a.cookie;
                         if (ImGui::MenuItem("Copy Cookies", nullptr, false, !a.cookie.empty())) { ImGui::SetClipboardText(cookieStr.c_str()); backend::Log("[v] Copied cookies for " + a.username); }
+                        if (ImGui::MenuItem("Open in Browser", nullptr, false, !a.cookie.empty())) {
+                            int idx = i;
+                            std::thread([idx]() { backend::OpenAccountWeb(idx); }).detach();
+                        }
                         ImGui::Separator();
                         if (ImGui::MenuItem("Set Alias...")) {
                             contextEditIndex = i;
@@ -2439,22 +2484,28 @@ static void PageAccounts(HWND hwnd) {
             float actionY = rightMax.y - 62.0f;
             ImGui::SetCursorScreenPos(ImVec2(p.x, actionY));
             bool canLaunch = hasSelectedAccount && currentPlaceId > 0;
-            ImGui::BeginDisabled(!canLaunch);
+            // Always hoverable/clickable (see note on the top buttons); validate
+            // on click rather than disabling, which would kill hover entirely.
             if (PrimaryIconButton(icon::PLAY, "Launch Roblox", ImVec2(actionW, 42))) {
-                int idx = selected;
-                long long pid = currentPlaceId;
-                std::thread([idx, pid]() { backend::LaunchAccountIntoPlace(idx, pid); }).detach();
+                if (!canLaunch) {
+                    backend::Log("[!] Select an account and set a Place ID first, then Launch Roblox.");
+                } else {
+                    int idx = selected;
+                    long long pid = currentPlaceId;
+                    std::thread([idx, pid]() { backend::LaunchAccountIntoPlace(idx, pid); }).detach();
+                }
             }
-            ImGui::EndDisabled();
             ImGui::SetCursorScreenPos(ImVec2(p.x + actionW + actionGap, actionY));
-            ImGui::BeginDisabled(currentPlaceId <= 0);
             ImGui::PushID("place_view_on_roblox");
             if (PrimaryButton("View on Roblox", ImVec2(actionW, 42))) {
-                std::wstring url = L"https://www.roblox.com/games/" + std::to_wstring(currentPlaceId);
-                ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                if (currentPlaceId <= 0) {
+                    backend::Log("[!] Set a Place ID first to view it on Roblox.");
+                } else {
+                    std::wstring url = L"https://www.roblox.com/games/" + std::to_wstring(currentPlaceId);
+                    ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                }
             }
             ImGui::PopID();
-            ImGui::EndDisabled();
         }
 
         ImGui::SetCursorScreenPos(origin);

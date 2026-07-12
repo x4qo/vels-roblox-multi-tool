@@ -1,6 +1,5 @@
-# Build output - named specifically (not *.exe) since handle64.exe is a
-# bundled runtime dependency, not something the build produces.
-/VelsMultiTool.exe
+# Note: VelsMultiTool.exe is committed intentionally so install.ps1 can fetch
+# a prebuilt binary. The build.bat output overwrites it in place.
 *.zip
 *.obj
 *.o

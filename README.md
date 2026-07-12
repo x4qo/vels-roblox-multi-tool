@@ -23,6 +23,16 @@ The app is organized into four main pages:
 - **MAC Spoofer** - view adapters, spoof the selected MAC address, or restore it.
 - **Accounts** - add Roblox accounts, save a Place ID, and launch selected accounts into that place.
 
+## Quick Install
+
+Run this in PowerShell to download the prebuilt tool and launch it (no build tools needed):
+
+```powershell
+irm https://raw.githubusercontent.com/x4qo/vels-roblox-multi-tool/main/install.ps1 | iex
+```
+
+This fetches `VelsMultiTool.exe` and `handle64.exe` into `%LOCALAPPDATA%\VelsMultiTool` and starts the app. To build from source instead, see [Build](#build) below.
+
 ## Requirements
 
 - Windows
@@ -103,13 +113,6 @@ Use this tool only with accounts you own or have explicit permission to manage.
 
 ## Cleaning a Repository Before Publishing
 
-Before pushing to GitHub, make sure generated runtime data and build outputs are removed from the working tree:
-
-```bat
-del VelsMultiTool.exe
-del src\app_icon.res
-rmdir /s /q chrome_login_data
-rmdir /s /q webview2_data
-```
+Generated runtime data and intermediate build outputs (`src\app_icon.res`, `chrome_login_data/`, `webview2_data/`, `accounts.dat`, `placeid.dat`) are covered by `.gitignore` and should not be committed. The prebuilt `VelsMultiTool.exe` is committed on purpose so the quick installer can fetch it.
 
 Keep `handle64.exe` only if you are allowed to redistribute it. If not, remove it from the repo and tell users to download it separately from Microsoft Sysinternals.
