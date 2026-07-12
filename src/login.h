@@ -17,4 +17,12 @@ namespace login {
 void ShowRobloxLoginWindow(const std::wstring& exeDir,
     std::function<void(bool success, std::string cookie)> onComplete);
 
+// Launches a SEPARATE Chrome instance with its own persistent, per-account
+// profile (web_profiles\acct_<userId>), injects the account's .ROBLOSECURITY
+// cookie via the DevTools Protocol, and navigates to roblox.com already signed
+// in. Unlike ShowRobloxLoginWindow this leaves the browser open and keeps the
+// profile on disk. Runs synchronously - call from a worker thread.
+void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie,
+    long long userId, const std::string& username);
+
 } // namespace login

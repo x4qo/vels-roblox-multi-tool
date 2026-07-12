@@ -1,6 +1,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include "backend.h"
+#include "login.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -19,6 +20,7 @@
 #include <cstdio>
 #include <fstream>
 #include <cstring>
+#include <regex>
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -292,6 +294,15 @@ static void WatcherLoop() {
             else Log("[i] Roblox closed, waiting...");
         }
 
+        // Same match the proven RobloxMulti.ps1 uses: require the handle *type*
+        // to be an Event and pull out the validated hex handle id. The old parse
+        // just grabbed everything before the first colon, which quietly failed
+        // whenever handle64's column spacing/banner lines differed from what it
+        // expected - so the singleton on already-open processes never got closed.
+        static const std::regex kSingletonRe(
+            R"(([0-9A-Fa-f]+):\s+Event\b.*ROBLOX_singletonEvent)",
+            std::regex::icase);
+
         for (DWORD pid : pids) {
             std::wstring args = L"-p " + std::to_wstring(pid) + L" -a -nobanner";
             std::string raw = RunCaptureOutput(handleExe, args);
@@ -300,17 +311,25 @@ static void WatcherLoop() {
             std::string line;
             while (std::getline(stream, line)) {
                 if (line.find("ROBLOX_singletonEvent") == std::string::npos) continue;
-                size_t colon = line.find(':');
-                if (colon == std::string::npos) continue;
-                std::string handleId = line.substr(0, colon);
-                size_t firstNonSpace = handleId.find_first_not_of(" \t");
-                if (firstNonSpace == std::string::npos) continue;
-                handleId = handleId.substr(firstNonSpace);
+                std::smatch m;
+                if (!std::regex_search(line, m, kSingletonRe)) continue;
+                std::string handleId = m[1].str();
 
                 Log("[!] Singleton event found (handle " + handleId + ", pid " + std::to_string(pid) + ") - closing it...");
                 std::wstring closeArgs = L"-c " + Widen(handleId) + L" -p " + std::to_wstring(pid) + L" -y -nobanner";
-                RunCaptureOutput(handleExe, closeArgs);
-                Log("[v] Done - you can open another instance now");
+                std::string closeOut = RunCaptureOutput(handleExe, closeArgs);
+                // handle64 needs to open the target process with enough rights to
+                // close a handle inside it; without elevation it prints an error
+                // and the lock survives, which looks like "it just doesn't work".
+                std::string lowered = closeOut;
+                for (char& c : lowered) c = (char)tolower((unsigned char)c);
+                if (lowered.find("error") != std::string::npos ||
+                    lowered.find("access is denied") != std::string::npos ||
+                    lowered.find("could not") != std::string::npos) {
+                    Log("[!] Failed to close the singleton - try running Vels Multi Tool as Administrator.");
+                } else {
+                    Log("[v] Done - you can open another instance now");
+                }
             }
         }
 
@@ -1580,6 +1599,27 @@ void LaunchAccountIntoPlace(int index, long long placeId) {
     Log("[v] Launched " + account.username + " into " + std::to_string(placeId) + ".");
     AddActivity("Launched Roblox", account.username);
     SchedulePostLaunchCookieScrub(account.username);
+}
+
+void OpenAccountWeb(int index) {
+    RobloxAccount account;
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        if (index < 0 || index >= (int)accounts.size()) {
+            Log("[!] Select an account first.");
+            return;
+        }
+        account = accounts[index];
+    }
+
+    if (account.cookie.empty()) {
+        Log("[!] This account has no saved cookie.");
+        return;
+    }
+
+    Log("[i] Opening web session for " + account.username + "...");
+    login::OpenAccountWebSession(g_exeDir, account.cookie, account.userId, account.username);
+    AddActivity("Opened Web", account.username);
 }
 
 static bool ParseIsoDate(const std::string& iso, int& year, int& month, int& day) {
