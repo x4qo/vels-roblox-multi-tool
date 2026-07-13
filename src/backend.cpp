@@ -272,6 +272,73 @@ static std::wstring Widen(const std::string& s) { return std::wstring(s.begin(),
 // ---------------------------------------------------------------------------
 // Multi-instance watcher
 // ---------------------------------------------------------------------------
+
+// One pass over every running RobloxPlayerBeta.exe: finds its
+// ROBLOX_singletonEvent handle (if any) via handle64.exe and closes it, so
+// another instance can be launched alongside it. Returns false only on a
+// hard failure (handle64.exe missing) - not finding any locks isn't a
+// failure, it just means nothing needed closing.
+static bool CloseRobloxSingletonsOnce(const std::wstring& handleExe, const std::vector<DWORD>& pids) {
+    // Same match the proven RobloxMulti.ps1 uses: require the handle *type*
+    // to be an Event and pull out the validated hex handle id. The old parse
+    // just grabbed everything before the first colon, which quietly failed
+    // whenever handle64's column spacing/banner lines differed from what it
+    // expected - so the singleton on already-open processes never got closed.
+    static const std::regex kSingletonRe(
+        R"(([0-9A-Fa-f]+):\s+Event\b.*ROBLOX_singletonEvent)",
+        std::regex::icase);
+
+    for (DWORD pid : pids) {
+        std::wstring args = L"-p " + std::to_wstring(pid) + L" -a -nobanner";
+        std::string raw = RunCaptureOutput(handleExe, args);
+
+        std::istringstream stream(raw);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.find("ROBLOX_singletonEvent") == std::string::npos) continue;
+            std::smatch m;
+            if (!std::regex_search(line, m, kSingletonRe)) continue;
+            std::string handleId = m[1].str();
+
+            Log("[!] Singleton event found (handle " + handleId + ", pid " + std::to_string(pid) + ") - closing it...");
+            std::wstring closeArgs = L"-c " + Widen(handleId) + L" -p " + std::to_wstring(pid) + L" -y -nobanner";
+            std::string closeOut = RunCaptureOutput(handleExe, closeArgs);
+            // handle64 needs to open the target process with enough rights to
+            // close a handle inside it; without elevation it prints an error
+            // and the lock survives, which looks like "it just doesn't work".
+            std::string lowered = closeOut;
+            for (char& c : lowered) c = (char)tolower((unsigned char)c);
+            if (lowered.find("error") != std::string::npos ||
+                lowered.find("access is denied") != std::string::npos ||
+                lowered.find("could not") != std::string::npos) {
+                Log("[!] Failed to close the singleton - try running Vels Multi Tool as Administrator.");
+            } else {
+                Log("[v] Done - you can open another instance now");
+            }
+        }
+    }
+    return true;
+}
+
+// Closes any current Roblox singleton locks right now, once, without
+// starting the continuous background watcher. This is what the header's
+// "Multi Instance" button runs - call from a worker thread.
+void CloseRobloxSingletonsNow() {
+    std::wstring handleExe = FindHandleExe();
+    if (handleExe.empty()) {
+        Log("[!] handle64.exe not found next to the exe. Place it in the same folder.");
+        return;
+    }
+    RunCaptureOutput(handleExe, L"-accepteula");
+    auto pids = FindPidsByName(L"RobloxPlayerBeta.exe");
+    if (pids.empty()) {
+        Log("[i] No Roblox instances running - nothing to unlock.");
+        return;
+    }
+    Log("[i] Closing Roblox singleton lock(s) so another instance can launch...");
+    CloseRobloxSingletonsOnce(handleExe, pids);
+}
+
 static void WatcherLoop() {
     std::wstring handleExe = FindHandleExe();
     if (handleExe.empty()) {
@@ -294,44 +361,7 @@ static void WatcherLoop() {
             else Log("[i] Roblox closed, waiting...");
         }
 
-        // Same match the proven RobloxMulti.ps1 uses: require the handle *type*
-        // to be an Event and pull out the validated hex handle id. The old parse
-        // just grabbed everything before the first colon, which quietly failed
-        // whenever handle64's column spacing/banner lines differed from what it
-        // expected - so the singleton on already-open processes never got closed.
-        static const std::regex kSingletonRe(
-            R"(([0-9A-Fa-f]+):\s+Event\b.*ROBLOX_singletonEvent)",
-            std::regex::icase);
-
-        for (DWORD pid : pids) {
-            std::wstring args = L"-p " + std::to_wstring(pid) + L" -a -nobanner";
-            std::string raw = RunCaptureOutput(handleExe, args);
-
-            std::istringstream stream(raw);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (line.find("ROBLOX_singletonEvent") == std::string::npos) continue;
-                std::smatch m;
-                if (!std::regex_search(line, m, kSingletonRe)) continue;
-                std::string handleId = m[1].str();
-
-                Log("[!] Singleton event found (handle " + handleId + ", pid " + std::to_string(pid) + ") - closing it...");
-                std::wstring closeArgs = L"-c " + Widen(handleId) + L" -p " + std::to_wstring(pid) + L" -y -nobanner";
-                std::string closeOut = RunCaptureOutput(handleExe, closeArgs);
-                // handle64 needs to open the target process with enough rights to
-                // close a handle inside it; without elevation it prints an error
-                // and the lock survives, which looks like "it just doesn't work".
-                std::string lowered = closeOut;
-                for (char& c : lowered) c = (char)tolower((unsigned char)c);
-                if (lowered.find("error") != std::string::npos ||
-                    lowered.find("access is denied") != std::string::npos ||
-                    lowered.find("could not") != std::string::npos) {
-                    Log("[!] Failed to close the singleton - try running Vels Multi Tool as Administrator.");
-                } else {
-                    Log("[v] Done - you can open another instance now");
-                }
-            }
-        }
+        CloseRobloxSingletonsOnce(handleExe, pids);
 
         for (int i = 0; i < 10 && watching; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
