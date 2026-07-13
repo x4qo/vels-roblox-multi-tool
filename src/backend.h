@@ -105,6 +105,10 @@ void StopWatching();
 void LaunchNewInstance();
 void KillAllRobloxInstances(); // runs synchronously, call from a worker thread
 
+// Closes any current Roblox singleton lock(s) once, immediately, without
+// starting the continuous watcher - runs synchronously, call from a worker thread.
+void CloseRobloxSingletonsNow();
+
 // Live system stats for the dashboard. Internally throttled/cached so polling
 // them every UI frame doesn't re-snapshot the process list or system times.
 int CountRobloxProcesses(bool force = false);
