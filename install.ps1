@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $repo    = 'x4qo/vels-roblox-multi-tool'
 $branch  = 'main'
 $base    = "https://raw.githubusercontent.com/$repo/$branch"
-$dest    = Join-Path $env:LOCALAPPDATA 'VelsMultiTool'
+$dest    = Join-Path (Join-Path $HOME 'Downloads') 'VelsMultiTool'
 # Relative paths under the repo -> placed at the same relative path under $dest.
 # The fonts are loaded from <exe>\fonts\ at runtime, so they must ship alongside.
 $files   = @(
