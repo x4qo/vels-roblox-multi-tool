@@ -2715,6 +2715,7 @@ static void ImportCookiesFromFile(const std::wstring& path) {
 // The redesigned main screen. `gotoMultiInstance` is set true when the user
 // clicks the top-right "Multi Instance" button so the caller can switch views.
 static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
+    (void)gotoMultiInstance; // Multi Instance is now a live toggle - it no longer switches pages
     static char placeIdBuf[32] = "";
     static bool placeIdInit = false;
     static std::set<int> selectedAccts;
@@ -2739,7 +2740,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
     const float bottomY = availTL.y + avail.y - MARGIN;   // leave a bottom gutter too
     const float padX = 20.0f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    (void)gotoMultiInstance;
 
     // ----- palette -----
     const ImVec4 cGreen = theme::good;                       // launch / connected
@@ -2791,14 +2791,18 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
     {
         char stats[256];
         snprintf(stats, sizeof(stats),
-            "%d accounts  \xE2\x80\xA2  0 connected  \xE2\x80\xA2  0 MB commit  \xE2\x80\xA2  %.1f%% CPU  \xE2\x80\xA2  %d alive  \xE2\x80\xA2  0 dead  \xE2\x80\xA2  %d selected",
+            "%d accounts  \xE2\x80\xA2  0 connected  \xE2\x80\xA2  %.1f%% CPU  \xE2\x80\xA2  %d alive  \xE2\x80\xA2  %d selected",
             acctCount, cpu, aliveN, (int)selectedAccts.size());
         dl->AddText(ImVec2(baseX + 62.0f, headY + 29.0f), subU, stats);
     }
     {
+        // The Multi Instance button is a live toggle: ON tints it green and, while
+        // active, the backend watcher holds the singleton mutex and closes any
+        // ROBLOX_singletonEvent handles so extra clients can launch. No page switch.
+        bool multiOn = backend::watching.load();
         struct HBtn { const char* label; unsigned icon; int id; const ImVec4* tint; };
         HBtn btns[] = {
-            { "Multi Instance",     icon::ROCKET,  0, nullptr },
+            { multiOn ? "Multi Instance: ON" : "Multi Instance", icon::ROCKET, 0, multiOn ? &cGreen : nullptr },
             { "Kill All Instances", icon::TRASH2,  1, &cRed },
             { "Launch Selected",    icon::PLAY,    2, &cGreen },
         };
@@ -2825,7 +2829,13 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 : DrawPopButton(b.label, ImVec2(widths[i], bh2), false, b.icon);
             ImGui::PopID();
             if (clicked) {
-                if (b.id == 0) std::thread([]() { backend::CloseRobloxSingletonsNow(); }).detach();
+                if (b.id == 0) {
+                    // Toggle multi-instance in place - no new section. Turning it on
+                    // starts the watcher (holds the singleton mutex + closes the
+                    // singleton event); turning it off stops it.
+                    if (backend::watching.load()) backend::StopWatching();
+                    else if (EnsureElevatedFor(L"Closing Roblox singleton handles")) backend::StartWatching();
+                }
                 else if (b.id == 1) std::thread([]() { backend::KillAllRobloxInstances(); }).detach();
                 else if (b.id == 2) {
                     long long pid = backend::savedPlaceId.load();
@@ -2950,13 +2960,223 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                                   : ImVec4(0.195f, 0.205f, 0.225f, 1.0f);
             dl->AddRect(imn, imx, ImGui::ColorConvertFloat4ToU32(bcol), 9.0f, 0, 1.4f);
         }
-        dl->AddText(ImVec2(cx + padX, cy + 122), subU, "Example: 1234567890");
+        // ----- Saved-places dropdown (fully custom, animated) -----
+        // Header sits under the Place ID field. Clicking it opens a floating panel
+        // (rendered as a borderless popup so it layers above the cards and closes
+        // on outside-click) whose height eases open and whose rows have their own
+        // hover/press animation. Picking a row fills the field + saves it; the
+        // footer lets you name-and-save the ID currently in the field.
+        {
+            long long curId = _atoi64(placeIdBuf);
+            float ddx = cx + padX, ddy = cy + 120.0f;
+            float ddw = leftW - padX - 6.0f, ddh = 34.0f;
+            ImVec2 dmn(ddx, ddy), dmx(ddx + ddw, ddy + ddh);
+
+            // snapshot the saved list once (used for both sizing and drawing)
+            std::vector<backend::SavedPlace> snapshot;
+            { std::lock_guard<std::mutex> lock(backend::savedPlacesMutex); snapshot = backend::savedPlaces; }
+
+            bool popupOpen = ImGui::IsPopupOpen("places_popup");
+
+            // --- header ---
+            ImGui::SetCursorScreenPos(dmn);
+            ImGui::InvisibleButton("##places_dd", ImVec2(ddw, ddh));
+            bool hdrHover = ImGui::IsItemHovered();
+            bool hdrHeld  = ImGui::IsItemActive();
+            if (ImGui::IsItemClicked() && !popupOpen) ImGui::OpenPopup("places_popup");
+            float hAnim = PopAnim(ImGui::GetID("##places_dd"), hdrHover, hdrHeld);
+            float hHov  = std::max(hAnim, 0.0f);
+
+            ImVec4 hdrFill = popupOpen ? theme::glassHover
+                                       : ImVec4(0.028f, 0.030f, 0.035f, 1.0f);
+            dl->AddRectFilled(dmn, dmx, ImGui::ColorConvertFloat4ToU32(hdrFill), 8.0f);
+            if (hHov > 0.01f)
+                DrawSoftRectGlow(dl, dmn, dmx, 8.0f, 6.0f * hHov, 0.12f * hHov, theme::accent);
+            ImVec4 hdrBorder = (popupOpen || hHov > 0.01f)
+                ? ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.45f + 0.4f * hHov)
+                : ImVec4(0.195f, 0.205f, 0.225f, 1.0f);
+            dl->AddRect(dmn, dmx, ImGui::ColorConvertFloat4ToU32(hdrBorder), 8.0f, 0, 1.3f);
+
+            // current-selection label
+            std::string curLabel;
+            for (auto& p : snapshot) if (p.id == curId) { curLabel = p.name; break; }
+            bool isHint = curLabel.empty();
+            if (isHint) curLabel = "Saved places";
+            dl->AddText(ImVec2(ddx + 12.0f, ddy + (ddh - ImGui::GetFontSize()) * 0.5f),
+                isHint ? subU : textU, curLabel.c_str());
+
+            // chevron: eases from pointing-down (closed) to pointing-up (open)
+            static float chevT = 0.0f;
+            chevT += ((popupOpen ? 1.0f : 0.0f) - chevT) * std::min(1.0f, ImGui::GetIO().DeltaTime * 14.0f);
+            {
+                float cxp = dmx.x - 16.0f, cyp = ddy + ddh * 0.5f;
+                float ang = 3.14159265f * chevT;              // 0 -> down, PI -> up
+                float ca = cosf(ang), sa = sinf(ang);
+                auto rot = [&](float rx, float ry) {
+                    return ImVec2(cxp + (rx * ca - ry * sa), cyp + (rx * sa + ry * ca));
+                };
+                ImU32 chevU = ImGui::ColorConvertFloat4ToU32(
+                    isHint ? theme::subtext : ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.9f));
+                dl->AddTriangleFilled(rot(-4.0f, -2.2f), rot(4.0f, -2.2f), rot(0.0f, 3.0f), chevU);
+            }
+
+            // --- floating panel ---
+            static float ddAnim = 0.0f;
+            ddAnim += ((popupOpen ? 1.0f : 0.0f) - ddAnim) * std::min(1.0f, ImGui::GetIO().DeltaTime * 16.0f);
+            if (ddAnim < 0.001f) ddAnim = 0.0f;
+
+            const float rowH = 36.0f;
+            const int   rowN = (int)snapshot.size();
+            const float footerH = 8.0f + 18.0f + 8.0f + 32.0f + 12.0f; // label + gap + input row + pad
+            const float fullH = 8.0f + rowN * rowH + 10.0f + 1.0f + footerH;
+            float eased = ddAnim * ddAnim * (3.0f - 2.0f * ddAnim); // smoothstep
+
+            ImGui::SetNextWindowPos(ImVec2(ddx, ddy + ddh + 6.0f));
+            ImGui::SetNextWindowSize(ImVec2(ddw, fullH * eased));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
+            bool vis = ImGui::BeginPopup("places_popup",
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
+            if (vis) {
+                ImDrawList* pdl = ImGui::GetWindowDrawList();
+                ImVec2 wp = ImGui::GetWindowPos();
+                ImVec2 pmin = wp, pmax = ImVec2(wp.x + ddw, wp.y + fullH);
+
+                // panel background + border (clipped to the animated window height)
+                pdl->AddRectFilled(pmin, pmax, ImGui::ColorConvertFloat4ToU32(ImVec4(0.058f, 0.061f, 0.070f, 1.0f)), 10.0f);
+                pdl->AddRect(pmin, pmax, ImGui::ColorConvertFloat4ToU32(ImVec4(0.20f, 0.21f, 0.24f, 1.0f)), 10.0f, 0, 1.2f);
+
+                // rows
+                for (int i = 0; i < rowN; ++i) {
+                    const backend::SavedPlace& p = snapshot[i];
+                    float ry = wp.y + 8.0f + i * rowH;
+                    char rid[32]; snprintf(rid, sizeof(rid), "##ddrow%d", i);
+                    char did[32]; snprintf(did, sizeof(did), "##dddel%d", i);
+
+                    // select hit-box (leaves 30px on the right for delete)
+                    ImGui::SetCursorScreenPos(ImVec2(wp.x + 5.0f, ry));
+                    ImGui::InvisibleButton(rid, ImVec2(ddw - 10.0f - 30.0f, rowH - 4.0f));
+                    bool selHov = ImGui::IsItemHovered();
+                    bool selHeld = ImGui::IsItemActive();
+                    bool selClick = ImGui::IsItemClicked();
+                    float ra = PopAnim(ImGui::GetID(rid), selHov, selHeld);
+                    float rHov = std::max(ra, 0.0f);
+
+                    // delete hit-box (right 30px)
+                    ImGui::SetCursorScreenPos(ImVec2(wp.x + ddw - 5.0f - 28.0f, ry + 2.0f));
+                    ImGui::InvisibleButton(did, ImVec2(28.0f, rowH - 8.0f));
+                    bool delHov = ImGui::IsItemHovered();
+                    bool delClick = ImGui::IsItemClicked();
+
+                    bool selected = (p.id == curId);
+                    ImVec2 rmin(wp.x + 5.0f, ry), rmax(wp.x + ddw - 5.0f, ry + rowH - 4.0f);
+
+                    // hover / selected highlight
+                    if (rHov > 0.01f || selected || delHov) {
+                        float fa = selected ? 0.16f : (0.05f + 0.11f * std::max(rHov, delHov ? 1.0f : 0.0f));
+                        pdl->AddRectFilled(rmin, rmax,
+                            ImGui::ColorConvertFloat4ToU32(ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, fa)), 7.0f);
+                    }
+                    if (selected) // left accent stripe
+                        pdl->AddRectFilled(ImVec2(rmin.x, rmin.y + 6.0f), ImVec2(rmin.x + 3.0f, rmax.y - 6.0f),
+                            ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
+
+                    // name (left) + place id (right)
+                    ImVec4 nameCol = (selected || rHov > 0.01f) ? theme::text
+                        : ImVec4(theme::text.x, theme::text.y, theme::text.z, 0.82f);
+                    std::string nm = p.name.empty() ? std::string("(unnamed)") : p.name;
+                    pdl->AddText(ImVec2(rmin.x + 12.0f, ry + (rowH - 4.0f - ImGui::GetFontSize()) * 0.5f),
+                        ImGui::ColorConvertFloat4ToU32(nameCol), nm.c_str());
+
+                    std::string ids = std::to_string(p.id);
+                    ImVec2 idsz = ImGui::CalcTextSize(ids.c_str());
+                    float idRight = wp.x + ddw - 5.0f - 30.0f;
+                    // fade the id out to make room for the delete glyph on hover
+                    float idAlpha = (selHov || delHov) ? 0.0f : 0.55f;
+                    if (idAlpha > 0.01f)
+                        pdl->AddText(ImVec2(idRight - idsz.x - 6.0f, ry + (rowH - 4.0f - idsz.y) * 0.5f),
+                            ImGui::ColorConvertFloat4ToU32(ImVec4(theme::subtext.x, theme::subtext.y, theme::subtext.z, idAlpha)), ids.c_str());
+
+                    // delete glyph (a small x) shown while hovering the row/delete
+                    if (selHov || delHov) {
+                        float dcx = wp.x + ddw - 5.0f - 15.0f, dcy = ry + (rowH - 4.0f) * 0.5f;
+                        ImVec4 xcol = delHov ? theme::bad : ImVec4(theme::subtext.x, theme::subtext.y, theme::subtext.z, 0.85f);
+                        ImU32 xu = ImGui::ColorConvertFloat4ToU32(xcol);
+                        float r = 4.0f;
+                        pdl->AddLine(ImVec2(dcx - r, dcy - r), ImVec2(dcx + r, dcy + r), xu, 1.6f);
+                        pdl->AddLine(ImVec2(dcx - r, dcy + r), ImVec2(dcx + r, dcy - r), xu, 1.6f);
+                    }
+
+                    if (delClick) { backend::RemoveSavedPlace(p.id); }
+                    else if (selClick) {
+                        std::string s = std::to_string(p.id);
+                        size_t len = std::min(s.size(), sizeof(placeIdBuf) - 1);
+                        memcpy(placeIdBuf, s.data(), len); placeIdBuf[len] = '\0';
+                        backend::SavePlaceId(p.id);
+                        std::string cookie;
+                        { std::lock_guard<std::mutex> lock(backend::accountsMutex);
+                          if (!backend::accounts.empty()) cookie = backend::accounts[0].cookie; }
+                        long long pid = p.id;
+                        std::thread([pid, cookie]() { backend::FetchPlaceInfo(pid, cookie); }).detach();
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+
+                // separator
+                float sy = wp.y + 8.0f + rowN * rowH + 8.0f;
+                pdl->AddLine(ImVec2(wp.x + 10.0f, sy), ImVec2(wp.x + ddw - 10.0f, sy),
+                    ImGui::ColorConvertFloat4ToU32(theme::border), 1.0f);
+
+                // footer: name field + Save button for the current Place ID
+                float fy = sy + 10.0f;
+                pdl->AddText(ImVec2(wp.x + 12.0f, fy), subU, "Save current Place ID");
+                fy += 20.0f;
+
+                static char newName[64] = "";
+                float inW = ddw - 20.0f - 62.0f;
+                ImVec2 inMin(wp.x + 10.0f, fy), inMax(wp.x + 10.0f + inW, fy + 32.0f);
+                pdl->AddRectFilled(inMin, inMax, ImGui::ColorConvertFloat4ToU32(ImVec4(0.028f, 0.030f, 0.035f, 1.0f)), 7.0f);
+
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, (32.0f - ImGui::GetFontSize()) * 0.5f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+                ImGui::SetCursorScreenPos(inMin);
+                ImGui::SetNextItemWidth(inW);
+                ImGui::InputTextWithHint("##newplacename", "Name", newName, sizeof(newName));
+                bool inFocused = ImGui::IsItemActive();
+                ImGui::PopStyleVar(2);
+                ImGui::PopStyleColor(3);
+                pdl->AddRect(inMin, inMax, ImGui::ColorConvertFloat4ToU32(inFocused
+                    ? ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.9f)
+                    : ImVec4(0.20f, 0.21f, 0.24f, 1.0f)), 7.0f, 0, 1.2f);
+
+                ImGui::SetCursorScreenPos(ImVec2(inMax.x + 8.0f, fy));
+                ImVec4 saveTint = theme::good;
+                if (DrawPopButton("Save", ImVec2(ddw - 20.0f - inW - 8.0f, 32.0f), false, 0, &saveTint)) {
+                    if (curId > 0) {
+                        std::string nmS = newName[0] ? std::string(newName) : ("Place " + std::to_string(curId));
+                        backend::AddSavedPlace(curId, nmS);
+                        newName[0] = '\0';
+                    }
+                }
+
+                ImGui::EndPopup();
+            }
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(2);
+        }
 
         // resolved-name / dashed placeholder box on the right
         std::string placeName; bool loaded = false;
+        std::vector<unsigned char> iconPng; long long infoPlaceId = 0;
         { std::lock_guard<std::mutex> lock(backend::placeInfoMutex);
           if (backend::placeInfo.loaded && backend::placeInfo.placeId == _atoi64(placeIdBuf) && backend::placeInfo.placeId > 0) {
-              placeName = backend::placeInfo.name; loaded = true; } }
+              placeName = backend::placeInfo.name; loaded = true;
+              iconPng = backend::placeInfo.iconPng; infoPlaceId = backend::placeInfo.placeId; } }
         float bxL = cx + leftW + 6.0f, bxR = cx + cw - padX;
         float byT = cy + 50.0f, byB = cy + card1H - 22.0f;
         ImVec4 dEdge = loaded ? theme::good : ImVec4(theme::subtext.x, theme::subtext.y, theme::subtext.z, 0.55f);
@@ -2971,11 +3191,26 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             dashV(byT, byB, bxR, dEdgeU, 6.0f, 5.0f, 1.2f);
         }
         float bcx = (bxL + bxR) * 0.5f;
-        IconBox(ImVec2(bcx - 16.0f, byT + 14.0f), 32.0f, icon::FILE_TEXT, theme::panelBg2, loaded ? theme::good : theme::subtext, 8.0f);
         if (loaded) {
-            ImVec2 s1 = ImGui::CalcTextSize(placeName.c_str());
-            dl->AddText(ImVec2(bcx - s1.x * 0.5f, byT + 56.0f), textU, placeName.c_str());
+            // Show the real game thumbnail if we have it decoded; otherwise fall
+            // back to the generic file glyph until FetchPlaceInfo delivers the icon.
+            ID3D11ShaderResourceView* iconTex = GetOrCreatePlaceIconTexture(infoPlaceId, iconPng);
+            const float thumb = 52.0f;
+            ImVec2 tp(bcx - thumb * 0.5f, byT + 12.0f);
+            ImVec2 tpMax(tp.x + thumb, tp.y + thumb);
+            if (iconTex) {
+                dl->AddImageRounded(iconTex, tp, tpMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 10.0f);
+                dl->AddRect(tp, tpMax, ImGui::ColorConvertFloat4ToU32(ImVec4(theme::good.x, theme::good.y, theme::good.z, 0.65f)), 10.0f, 0, 1.3f);
+            } else {
+                IconBox(ImVec2(bcx - 16.0f, byT + 20.0f), 32.0f, icon::FILE_TEXT, theme::panelBg2, theme::good, 8.0f);
+            }
+            ImGui::PushFont(theme::fontBrand);
+            std::string fit = FitTextToWidth(placeName, (bxR - bxL) - 16.0f);
+            ImVec2 s1 = ImGui::CalcTextSize(fit.c_str());
+            dl->AddText(ImVec2(bcx - s1.x * 0.5f, byT + 70.0f), textU, fit.c_str());
+            ImGui::PopFont();
         } else {
+            IconBox(ImVec2(bcx - 16.0f, byT + 14.0f), 32.0f, icon::FILE_TEXT, theme::panelBg2, theme::subtext, 8.0f);
             const char* t1 = "No place configured yet.";
             const char* t2 = "Enter a Place ID to get started.";
             ImVec2 s1 = ImGui::CalcTextSize(t1), s2 = ImGui::CalcTextSize(t2);
@@ -3136,7 +3371,21 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     dl->AddLine(ImVec2(cbc.x - 3, cbc.y), ImVec2(cbc.x - 1, cbc.y + 3), ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
                     dl->AddLine(ImVec2(cbc.x - 1, cbc.y + 3), ImVec2(cbc.x + 4, cbc.y - 3), ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
                 }
-                dl->AddText(ImVec2(colAccount, ry + 9), textU, rows[i].name.c_str());
+                // Roblox avatar headshot thumbnail in the Account column. The
+                // texture is cached by userId; a null texture falls back to an
+                // initial-letter circle until the PNG finishes downloading.
+                ID3D11ShaderResourceView* avTex = nullptr;
+                {
+                    std::lock_guard<std::mutex> alock(backend::accountsMutex);
+                    if (i < (int)backend::accounts.size()) {
+                        RobloxAccount& a = backend::accounts[i];
+                        if (!a.avatarRequested) { a.avatarRequested = true; std::thread(backend::FetchAccountAvatar, i).detach(); }
+                        avTex = GetOrCreateAvatarTexture(a);
+                    }
+                }
+                float avSz = 26.0f;
+                DrawAvatarCircle(ImVec2(colAccount, ry + (rowH - 4.0f - avSz) * 0.5f), avSz, avTex, rows[i].name);
+                dl->AddText(ImVec2(colAccount + avSz + 10.0f, ry + 9), textU, rows[i].name.c_str());
                 dl->AddText(ImVec2(colConn, ry + 9), subU, "Idle");
                 dl->AddText(ImVec2(colMem, ry + 9), subU, "-");
                 dl->AddText(ImVec2(colCpu, ry + 9), subU, "-");
