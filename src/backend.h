@@ -176,6 +176,16 @@ extern std::atomic<long long> savedPlaceId;
 void SavePlaceId(long long placeId);
 void LoadPlaceId(); // called once from Init()
 
+// Saved place-ID presets shown in the Launch Settings dropdown, persisted to
+// places.dat next to the exe (one "id name" per line). Seeded with a default
+// set on first run so the dropdown is never empty.
+struct SavedPlace { long long id; std::string name; };
+extern std::mutex savedPlacesMutex;
+extern std::vector<SavedPlace> savedPlaces;
+void LoadSavedPlaces();                                  // called once from Init()
+void AddSavedPlace(long long id, const std::string& name); // insert or update by id, then persist
+void RemoveSavedPlace(long long id);                     // remove by id, then persist
+
 // Recent-activity feed, newest first. Populated by real app events (account
 // added/removed, place ID saved, launch attempted) - not Roblox API data.
 extern std::mutex activityMutex;

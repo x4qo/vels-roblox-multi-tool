@@ -191,6 +191,7 @@ void Init(const std::wstring& exeDir) {
     g_startTime = std::chrono::steady_clock::now();
     LoadAccounts();
     LoadPlaceId();
+    LoadSavedPlaces();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
 }
@@ -1851,6 +1852,70 @@ void LoadPlaceId() {
     std::ifstream f(path.c_str());
     long long id = 0;
     if (f >> id) savedPlaceId = id;
+}
+
+// ---- Saved place presets (Launch Settings dropdown) -------------------------
+std::mutex savedPlacesMutex;
+std::vector<SavedPlace> savedPlaces;
+
+static std::wstring PlacesFilePath() { return g_exeDir + L"\\places.dat"; }
+
+// Writes the current savedPlaces list to disk. Caller must hold savedPlacesMutex.
+static void WriteSavedPlacesLocked() {
+    std::ofstream f(PlacesFilePath().c_str(), std::ios::trunc);
+    if (!f) return;
+    for (const auto& p : savedPlaces) f << p.id << ' ' << p.name << '\n';
+}
+
+void LoadSavedPlaces() {
+    std::lock_guard<std::mutex> lock(savedPlacesMutex);
+    std::wstring path = PlacesFilePath();
+    if (std::filesystem::exists(path)) {
+        std::ifstream f(path.c_str());
+        std::string line;
+        while (std::getline(f, line)) {
+            std::istringstream ss(line);
+            long long id = 0;
+            if (!(ss >> id) || id <= 0) continue;
+            std::string name;
+            std::getline(ss, name);
+            // trim the single leading space left by the id, plus any stray CR
+            size_t b = name.find_first_not_of(" \t\r");
+            size_t e = name.find_last_not_of(" \t\r");
+            name = (b == std::string::npos) ? std::string() : name.substr(b, e - b + 1);
+            savedPlaces.push_back({ id, name });
+        }
+    }
+    if (savedPlaces.empty()) {
+        // First run: seed the defaults and persist them.
+        savedPlaces = {
+            { 10561483644LL,     "Mystic Falls" },
+            { 10561482233LL,     "New Orleans" },
+            { 10561484691LL,     "Salvatore School" },
+            { 123974602339071LL, "Baseplate" },
+            { 4924922222LL,      "Brookhaven" },
+        };
+        WriteSavedPlacesLocked();
+    }
+}
+
+void AddSavedPlace(long long id, const std::string& name) {
+    if (id <= 0) return;
+    std::lock_guard<std::mutex> lock(savedPlacesMutex);
+    for (auto& p : savedPlaces) {
+        if (p.id == id) { p.name = name; WriteSavedPlacesLocked(); return; }
+    }
+    savedPlaces.push_back({ id, name });
+    WriteSavedPlacesLocked();
+    AddActivity("Saved place preset", name.empty() ? std::to_string(id) : name);
+}
+
+void RemoveSavedPlace(long long id) {
+    std::lock_guard<std::mutex> lock(savedPlacesMutex);
+    for (size_t i = 0; i < savedPlaces.size(); ++i) {
+        if (savedPlaces[i].id == id) { savedPlaces.erase(savedPlaces.begin() + i); break; }
+    }
+    WriteSavedPlacesLocked();
 }
 
 void AddActivity(const std::string& title, const std::string& subtitle) {

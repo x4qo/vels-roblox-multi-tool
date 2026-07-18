@@ -12,8 +12,10 @@
 # Runtime/user data - generated at runtime, never source
 accounts.dat
 placeid.dat
+places.dat
 /chrome_login_data/
 /webview2_data/
+/web_profiles/
 
 # Editor/OS cruft
 .vs/
