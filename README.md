@@ -4,24 +4,21 @@ Vels Multi Tool is a Windows desktop utility for Roblox workflows. It uses a nat
 
 ## Features
 
-- Multi-instance Roblox launcher with singleton-handle cleanup support
-- Roblox process watcher and live instance count
-- Roblox cookie file cleaner and locker for `RobloxCookies.dat`
-- Browser cookie scanner/cleaner for Roblox cookies
-- MAC address spoofer with adapter discovery and restore support
-- Encrypted local Roblox account manager using Windows DPAPI
-- Account stats, avatar previews, aliases, optional stored passwords, and quick launch into a saved Place ID
-- Place metadata preview, including name, creator, visits, favorites, and icon
-- Administrator elevation flow for features that need elevated Windows permissions
+**Multiple clients.** Toggling Multi Instance holds the singleton mutex and closes any `ROBLOX_singletonEvent` handles, which is what lets a second client start at all. Running instances are counted live.
 
-## Screens
+**Accounts.** Add them by logging in through Chrome, pasting cookies, or loading a cookie file. The store is encrypted with Windows DPAPI, so `accounts.dat` only decrypts on the machine that wrote it. Each account keeps its avatar, stats, an optional alias and password, and a menu to copy its cookie, `user:pass`, username or password.
 
-The app is organized into four main pages:
+**Launching.** Select any number of accounts and send them all into a Place ID. Paste a private server link (`roblox.com/share?code=...&type=Server`, or a `?privateServerLinkCode=` URL) and it resolves the code through Roblox's share-link API, then launches every selected account into that server. Places and private servers can both be saved as named presets.
 
-- **Multi-Instance** - launch Roblox, monitor running clients, and jump to common tools.
-- **Cookie Cleaner** - scan and clear Roblox/browser cookie traces.
-- **MAC Spoofer** - view adapters, spoof the selected MAC address, or restore it.
-- **Accounts** - add Roblox accounts, save a Place ID, and launch selected accounts into that place.
+**Downgrading.** Live, previous and upcoming Windows versions come from the WEAO API. Picking one downloads the packages from Roblox's deployment CDN the same way rdd.weao.gg does, unpacks them into `Builds\<version-hash>` next to the exe, and writes the `AppSettings.xml` the client needs. A switch decides whether launches use that build or your normal install, so deleting the folder is all it takes to undo.
+
+**Cleanup.** Clears `RobloxCookies.dat` and can lock it, and scans browsers for leftover Roblox cookies. MAC spoofing lists adapters and restores the original address.
+
+Admin rights are requested when a feature needs them, not at startup.
+
+## Layout
+
+Everything sits on one screen: adding accounts and the version manager on the left, place and private server settings on the right, and the account table underneath. Multi Instance is a toggle in the header rather than a separate page.
 
 ## Quick Install
 
@@ -99,6 +96,11 @@ The app generates local runtime files next to the executable:
 ```text
 accounts.dat         DPAPI-encrypted account store
 placeid.dat          Saved Roblox Place ID
+places.dat           Named place presets
+privateserver.dat    Active private server
+privateservers.dat   Named private server presets
+activebuild.dat      Which downloaded build to launch, if any
+Builds/              Downloaded Roblox clients, one folder per version
 chrome_login_data/   Temporary Chrome login profiles
 webview2_data/       Runtime browser data, if created
 ```
@@ -113,6 +115,6 @@ Use this tool only with accounts you own or have explicit permission to manage.
 
 ## Cleaning a Repository Before Publishing
 
-Generated runtime data and intermediate build outputs (`src\app_icon.res`, `chrome_login_data/`, `webview2_data/`, `accounts.dat`, `placeid.dat`) are covered by `.gitignore` and should not be committed. The prebuilt `VelsMultiTool.exe` is committed on purpose so the quick installer can fetch it.
+Runtime data and build leftovers (`src\app_icon.res`, `chrome_login_data/`, `webview2_data/`, `accounts.dat`, the `.dat` presets, and `Builds/`) are already in `.gitignore` and should stay out of commits. `Builds/` in particular is hundreds of MB of downloaded Roblox clients. The prebuilt `VelsMultiTool.exe` is committed on purpose so the quick installer can fetch it.
 
 Keep `handle64.exe` only if you are allowed to redistribute it. If not, remove it from the repo and tell users to download it separately from Microsoft Sysinternals.
