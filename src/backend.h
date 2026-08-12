@@ -45,6 +45,8 @@ struct PlaceInfo {
     std::string creator;
     long long visits = -1;
     long long favorites = -1;
+    long long playing = -1;    // live player count
+    long long maxPlayers = -1; // server size
     std::vector<unsigned char> iconPng;
     bool loaded = false;
     bool requested = false;
@@ -111,6 +113,11 @@ void CloseRobloxSingletonsNow();
 
 // Live system stats for the dashboard. Internally throttled/cached so polling
 // them every UI frame doesn't re-snapshot the process list or system times.
+// Set by the UI loop. While the window isn't the foreground one, the polled
+// dashboard stats (process snapshots in particular) back off hard - nobody is
+// reading them, and a full system process snapshot is not free.
+extern std::atomic<bool> uiForeground;
+
 int CountRobloxProcesses(bool force = false);
 float GetCpuUsagePercent();
 float GetMemoryUsagePercent();
@@ -149,6 +156,10 @@ void SetAccountAlias(int index, const std::string& alias);
 // launches the Roblox client into the given place via the roblox-player: protocol.
 void LaunchAccountIntoPlace(int index, long long placeId);
 
+// Same as above, but joins a private server via its link code (the code behind a
+// roblox.com/share?code=...&type=Server link, or a ?privateServerLinkCode= URL).
+void LaunchAccountIntoPrivateServer(int index, long long placeId, const std::string& linkCode);
+
 // Launches a separate browser instance with its own per-account profile, injects
 // the account's cookie, and opens roblox.com logged in. Call from a worker thread.
 void OpenAccountWeb(int index);
@@ -185,6 +196,72 @@ extern std::vector<SavedPlace> savedPlaces;
 void LoadSavedPlaces();                                  // called once from Init()
 void AddSavedPlace(long long id, const std::string& name); // insert or update by id, then persist
 void RemoveSavedPlace(long long id);                     // remove by id, then persist
+
+// --- private servers -------------------------------------------------------
+// A private server is identified by its link code plus the place it belongs to.
+struct PrivateServer {
+    long long   placeId = 0;
+    std::string linkCode;   // the "code" from a share link, or privateServerLinkCode
+    std::string name;       // user-given label (saved presets only)
+};
+
+// The private server the next launch should join. Empty linkCode = join the
+// public game normally. Persisted to privateserver.dat next to the exe.
+extern std::mutex activePrivateServerMutex;
+extern PrivateServer activePrivateServer;
+void LoadActivePrivateServer();                    // called once from Init()
+void SetActivePrivateServer(const PrivateServer& ps); // persists + logs
+void ClearActivePrivateServer();
+
+// Saved private-server presets, persisted to privateservers.dat next to the exe
+// (one "placeId linkCode name" per line).
+extern std::mutex privateServersMutex;
+extern std::vector<PrivateServer> savedPrivateServers;
+void LoadSavedPrivateServers();                          // called once from Init()
+void AddSavedPrivateServer(const PrivateServer& ps);     // insert or update by link code
+void RemoveSavedPrivateServer(const std::string& linkCode);
+
+// Turns any of these into a usable {placeId, linkCode}:
+//   https://www.roblox.com/share?code=<32 hex>&type=Server   (resolved via the API)
+//   https://www.roblox.com/games/<placeId>/x?privateServerLinkCode=<code>
+//   a bare share code
+// Share links need an authenticated cookie to resolve. Runs synchronously
+// (network) - call from a worker thread. Returns false and logs on failure.
+bool ResolvePrivateServerLink(const std::string& input, const std::string& cookie, PrivateServer& out);
+// True while a resolve is in flight, for the UI spinner/label.
+extern std::atomic<bool> privateServerResolving;
+
+// --- Roblox build manager (downgrade / force live) --------------------------
+// Builds are downloaded straight from Roblox's deployment CDN the same way RDD
+// (rdd.weao.gg) does it - package manifest, per-package zips, AppSettings.xml -
+// into "Builds\<version-hash>" next to the exe. The active build, if any, is
+// what every launch runs instead of the system install.
+struct RobloxBuildState {
+    std::string liveVersion;    // WEAO current Windows hash
+    std::string liveDate;       // WEAO current Windows timestamp
+    std::string futureVersion;  // WEAO next Windows hash (may be empty)
+    std::string pastVersion;    // WEAO previous Windows hash (may be empty)
+    std::string pastDate;       // WEAO previous Windows timestamp
+    bool        weaoLoaded = false;
+    std::string activeVersion;  // "" = launch the system-installed client
+    std::string preferredVersion; // last build that was switched on, kept across toggling off
+    std::string status;         // human-readable progress line for the UI
+    float       progress = 0.0f;// 0..1 while busy
+    bool        busy = false;
+};
+extern std::mutex robloxBuildMutex;
+extern RobloxBuildState robloxBuild;
+extern std::vector<std::string> downloadedBuilds; // hashes present under Builds\ (same mutex)
+
+void LoadRobloxBuilds();   // called once from Init(): scans Builds\ + activebuild.dat
+void FetchWeaoVersions();  // GETs weao.xyz current+future. Call from a worker thread.
+// Downloads + extracts a build and makes it active. Runs synchronously
+// (network + disk), call from a worker thread. Empty hash = the live version.
+void DownloadRobloxBuild(std::string versionHash);
+void ForceLiveBuild();     // download (if needed) + activate the current live version
+void DownloadPreviousBuild(); // same, for the version Roblox shipped before this one
+void SetActiveBuild(const std::string& versionHash); // "" = back to the system install
+void DeleteBuild(const std::string& versionHash);
 
 // Recent-activity feed, newest first. Populated by real app events (account
 // added/removed, place ID saved, launch attempted) - not Roblox API data.
