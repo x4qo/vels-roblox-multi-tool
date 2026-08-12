@@ -13,6 +13,13 @@
 accounts.dat
 placeid.dat
 places.dat
+privateserver.dat
+privateservers.dat
+activebuild.dat
+*.preidle.bak
+
+# Roblox clients downloaded by the built-in downgrader
+/Builds/
 /chrome_login_data/
 /webview2_data/
 /web_profiles/

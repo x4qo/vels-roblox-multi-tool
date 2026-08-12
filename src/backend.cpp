@@ -21,6 +21,8 @@
 #include <fstream>
 #include <cstring>
 #include <regex>
+#include <set>
+#include <functional>
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -192,6 +194,9 @@ void Init(const std::wstring& exeDir) {
     LoadAccounts();
     LoadPlaceId();
     LoadSavedPlaces();
+    LoadSavedPrivateServers();
+    LoadActivePrivateServer();
+    LoadRobloxBuilds();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
 }
@@ -351,6 +356,7 @@ static void WatcherLoop() {
     RunCaptureOutput(handleExe, L"-accepteula");
     Log("[i] Watching for RobloxPlayerBeta.exe ...");
     int lastCount = -1;
+    std::set<DWORD> lastPids;
 
     while (watching) {
         auto pids = FindPidsByName(L"RobloxPlayerBeta.exe");
@@ -362,9 +368,23 @@ static void WatcherLoop() {
             else Log("[i] Roblox closed, waiting...");
         }
 
-        CloseRobloxSingletonsOnce(handleExe, pids);
+        // The singleton sweep shells out to handle64.exe, which enumerates
+        // every handle on the system - by far the most expensive thing this
+        // app can do, and it used to run twice a second forever. A process
+        // that already had its lock closed never grows a new one, so the
+        // sweep is only needed when a Roblox process we haven't handled yet
+        // shows up. Between those events this thread just does one cheap
+        // process-list snapshot per second.
+        std::set<DWORD> current(pids.begin(), pids.end());
+        bool newProcess = false;
+        for (DWORD pid : current) {
+            if (lastPids.find(pid) == lastPids.end()) { newProcess = true; break; }
+        }
+        lastPids.swap(current);
 
-        for (int i = 0; i < 10 && watching; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (newProcess) CloseRobloxSingletonsOnce(handleExe, pids);
+
+        for (int i = 0; i < 20 && watching; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     Log("[i] Watcher stopped.");
 }
@@ -408,11 +428,14 @@ void KillAllRobloxInstances() {
 // ---------------------------------------------------------------------------
 // Live dashboard stats - throttled/cached since the UI polls these every frame
 // ---------------------------------------------------------------------------
+std::atomic<bool> uiForeground{ true };
+
 int CountRobloxProcesses(bool force) {
     static int cached = 0;
     static auto lastCheck = std::chrono::steady_clock::now() - std::chrono::seconds(2);
     auto now = std::chrono::steady_clock::now();
-    if (force || now - lastCheck > std::chrono::milliseconds(800)) {
+    auto interval = uiForeground.load() ? std::chrono::milliseconds(800) : std::chrono::milliseconds(5000);
+    if (force || now - lastCheck > interval) {
         cached = (int)FindPidsByName(L"RobloxPlayerBeta.exe").size();
         lastCheck = now;
     }
@@ -1320,6 +1343,17 @@ static bool RefreshStoredAccountCookie(int index, RobloxAccount& account) {
 }
 
 static std::wstring FindRobloxPlayerExe() {
+    // A downloaded build wins over whatever the system installer left behind.
+    {
+        std::lock_guard<std::mutex> lock(robloxBuildMutex);
+        if (!robloxBuild.activeVersion.empty()) {
+            std::filesystem::path exe = std::filesystem::path(g_exeDir) / "Builds" /
+                robloxBuild.activeVersion / "RobloxPlayerBeta.exe";
+            std::error_code ec;
+            if (std::filesystem::exists(exe, ec)) return exe.wstring();
+        }
+    }
+
     std::vector<std::filesystem::path> roots;
     std::wstring local = LocalAppDataPath();
     if (!local.empty()) roots.emplace_back(local + L"\\Roblox\\Versions");
@@ -1578,7 +1612,10 @@ void SetAccountAlias(int index, const std::string& alias) {
     Log("[v] Saved alias for " + accountName);
 }
 
-void LaunchAccountIntoPlace(int index, long long placeId) {
+// Shared implementation for public + private-server launches. An empty
+// linkCode requests the normal public game; otherwise we ask PlaceLauncher for
+// the private game behind that link code.
+static void LaunchAccountInternal(int index, long long placeId, const std::string& linkCode) {
     RobloxAccount account;
     {
         std::lock_guard<std::mutex> lock(accountsMutex);
@@ -1609,14 +1646,37 @@ void LaunchAccountIntoPlace(int index, long long placeId) {
     long long launchTime = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    std::string placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGame"
-        "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) + "&isPlayTogetherGame=false";
+    std::string placeLauncherUrl;
+    if (linkCode.empty()) {
+        placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGame"
+            "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) + "&isPlayTogetherGame=false";
+    } else {
+        placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestPrivateGame"
+            "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) +
+            "&linkCode=" + UrlEncode(linkCode) + "&accessCode=&isPlayTogetherGame=false";
+    }
 
     std::string uri = "roblox-player:1+launchmode:play+gameinfo:" + ticket +
         "+launchtime:" + std::to_string(launchTime) +
         "+placelauncherurl:" + UrlEncode(placeLauncherUrl) +
         "+browsertrackerid:" + browserTrackerId +
         "+robloxLocale:en_us+gameLocale:en_us+channel:+LaunchExp:InApp";
+
+    // With a downgraded/pinned build selected the roblox-player: protocol would
+    // hand the launch to the system install, so go straight to the exe instead.
+    bool pinnedBuild;
+    { std::lock_guard<std::mutex> lock(robloxBuildMutex); pinnedBuild = !robloxBuild.activeVersion.empty(); }
+    if (pinnedBuild) {
+        if (!LaunchRobloxDirect(ticket, placeLauncherUrl)) {
+            ScrubAndLockRobloxCookieFile(("after failed launch for " + account.username).c_str(), false);
+            return;
+        }
+        Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
+            (linkCode.empty() ? "." : " (private server)."));
+        AddActivity(linkCode.empty() ? "Launched Roblox" : "Launched into private server", account.username);
+        SchedulePostLaunchCookieScrub(account.username);
+        return;
+    }
 
     int beforeCount = (int)FindPidsByName(L"RobloxPlayerBeta.exe").size();
     std::wstring wuri(uri.begin(), uri.end());
@@ -1627,9 +1687,19 @@ void LaunchAccountIntoPlace(int index, long long placeId) {
         return;
     }
 
-    Log("[v] Launched " + account.username + " into " + std::to_string(placeId) + ".");
-    AddActivity("Launched Roblox", account.username);
+    Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
+        (linkCode.empty() ? "." : " (private server)."));
+    AddActivity(linkCode.empty() ? "Launched Roblox" : "Launched into private server", account.username);
     SchedulePostLaunchCookieScrub(account.username);
+}
+
+void LaunchAccountIntoPlace(int index, long long placeId) {
+    LaunchAccountInternal(index, placeId, "");
+}
+
+void LaunchAccountIntoPrivateServer(int index, long long placeId, const std::string& linkCode) {
+    if (linkCode.empty()) { LaunchAccountInternal(index, placeId, ""); return; }
+    LaunchAccountInternal(index, placeId, linkCode);
 }
 
 void OpenAccountWeb(int index) {
@@ -1794,7 +1864,7 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
     if (placeId <= 0) return;
 
     std::string name;
-    long long visits = -1, favorites = -1, universeId = 0;
+    long long visits = -1, favorites = -1, universeId = 0, playing = -1, maxPlayers = -1;
     std::vector<unsigned char> icon;
 
     std::string creator;
@@ -1809,7 +1879,11 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
     if (universeId > 0) {
         std::wstring uid = std::to_wstring(universeId);
         HttpResponse gamesResp = HttpRequest(L"games.roblox.com", L"/v1/games?universeIds=" + uid, L"GET", "", {}, "");
-        if (gamesResp.ok && gamesResp.status == 200) visits = ExtractJsonLongField(gamesResp.body, "visits");
+        if (gamesResp.ok && gamesResp.status == 200) {
+            visits = ExtractJsonLongField(gamesResp.body, "visits");
+            playing = ExtractJsonLongField(gamesResp.body, "playing");
+            maxPlayers = ExtractJsonLongField(gamesResp.body, "maxPlayers");
+        }
 
         HttpResponse favResp = HttpRequest(L"games.roblox.com", L"/v1/games/" + uid + L"/favorites/count", L"GET", "", {}, "");
         if (favResp.ok && favResp.status == 200) favorites = ExtractJsonLongField(favResp.body, "favoritesCount");
@@ -1829,6 +1903,8 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
     placeInfo.creator = creator;
     placeInfo.visits = visits;
     placeInfo.favorites = favorites;
+    placeInfo.playing = playing;
+    placeInfo.maxPlayers = maxPlayers;
     if (!icon.empty()) placeInfo.iconPng = std::move(icon);
     placeInfo.loaded = true;
 }
@@ -1916,6 +1992,607 @@ void RemoveSavedPlace(long long id) {
         if (savedPlaces[i].id == id) { savedPlaces.erase(savedPlaces.begin() + i); break; }
     }
     WriteSavedPlacesLocked();
+}
+
+// ---- private servers -------------------------------------------------------
+std::mutex activePrivateServerMutex;
+PrivateServer activePrivateServer;
+std::mutex privateServersMutex;
+std::vector<PrivateServer> savedPrivateServers;
+std::atomic<bool> privateServerResolving{ false };
+
+static std::wstring ActivePrivateServerFilePath() { return g_exeDir + L"\\privateserver.dat"; }
+static std::wstring PrivateServersFilePath()      { return g_exeDir + L"\\privateservers.dat"; }
+
+// "<placeId> <linkCode> <name...>" - name may contain spaces, code never does.
+static bool ParsePrivateServerLine(const std::string& line, PrivateServer& out) {
+    std::istringstream ss(line);
+    long long id = 0;
+    std::string code;
+    if (!(ss >> id >> code)) return false;
+    std::string name;
+    std::getline(ss, name);
+    size_t b = name.find_first_not_of(" \t\r");
+    size_t e = name.find_last_not_of(" \t\r");
+    out.placeId = id;
+    out.linkCode = code;
+    out.name = (b == std::string::npos) ? std::string() : name.substr(b, e - b + 1);
+    return !out.linkCode.empty();
+}
+
+// Caller must hold privateServersMutex.
+static void WriteSavedPrivateServersLocked() {
+    std::ofstream f(PrivateServersFilePath().c_str(), std::ios::trunc);
+    if (!f) return;
+    for (const auto& p : savedPrivateServers) f << p.placeId << ' ' << p.linkCode << ' ' << p.name << '\n';
+}
+
+void LoadSavedPrivateServers() {
+    std::lock_guard<std::mutex> lock(privateServersMutex);
+    std::wstring path = PrivateServersFilePath();
+    if (!std::filesystem::exists(path)) return;
+    std::ifstream f(path.c_str());
+    std::string line;
+    while (std::getline(f, line)) {
+        PrivateServer ps;
+        if (ParsePrivateServerLine(line, ps)) savedPrivateServers.push_back(ps);
+    }
+}
+
+void AddSavedPrivateServer(const PrivateServer& ps) {
+    if (ps.linkCode.empty()) return;
+    std::lock_guard<std::mutex> lock(privateServersMutex);
+    for (auto& p : savedPrivateServers) {
+        if (p.linkCode == ps.linkCode) { p = ps; WriteSavedPrivateServersLocked(); return; }
+    }
+    savedPrivateServers.push_back(ps);
+    WriteSavedPrivateServersLocked();
+    AddActivity("Saved private server", ps.name.empty() ? ps.linkCode : ps.name);
+}
+
+void RemoveSavedPrivateServer(const std::string& linkCode) {
+    std::lock_guard<std::mutex> lock(privateServersMutex);
+    for (size_t i = 0; i < savedPrivateServers.size(); ++i) {
+        if (savedPrivateServers[i].linkCode == linkCode) { savedPrivateServers.erase(savedPrivateServers.begin() + i); break; }
+    }
+    WriteSavedPrivateServersLocked();
+}
+
+void LoadActivePrivateServer() {
+    std::wstring path = ActivePrivateServerFilePath();
+    if (!std::filesystem::exists(path)) return;
+    std::ifstream f(path.c_str());
+    std::string line;
+    if (!std::getline(f, line)) return;
+    PrivateServer ps;
+    if (!ParsePrivateServerLine(line, ps)) return;
+    std::lock_guard<std::mutex> lock(activePrivateServerMutex);
+    activePrivateServer = ps;
+}
+
+void SetActivePrivateServer(const PrivateServer& ps) {
+    {
+        std::lock_guard<std::mutex> lock(activePrivateServerMutex);
+        activePrivateServer = ps;
+    }
+    std::ofstream f(ActivePrivateServerFilePath().c_str(), std::ios::trunc);
+    if (f) f << ps.placeId << ' ' << ps.linkCode << ' ' << ps.name << '\n';
+    Log("[v] Private server set (place " + std::to_string(ps.placeId) + ").");
+    AddActivity("Private server selected", ps.name.empty() ? ps.linkCode : ps.name);
+}
+
+void ClearActivePrivateServer() {
+    {
+        std::lock_guard<std::mutex> lock(activePrivateServerMutex);
+        activePrivateServer = PrivateServer{};
+    }
+    std::error_code ec;
+    std::filesystem::remove(ActivePrivateServerFilePath(), ec);
+    Log("[i] Private server cleared - launches will join the public game.");
+}
+
+// Pulls "<key>=<value>" out of a query string; value ends at & or #.
+static std::string QueryParam(const std::string& url, const std::string& key) {
+    std::string pat = key + "=";
+    size_t pos = url.find(pat);
+    if (pos == std::string::npos) return "";
+    // make sure we matched a whole parameter name, not a suffix of one
+    if (pos > 0 && url[pos - 1] != '?' && url[pos - 1] != '&') return "";
+    pos += pat.size();
+    size_t end = url.find_first_of("&#", pos);
+    return url.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+}
+
+static std::string TrimCopy(const std::string& s) {
+    size_t b = s.find_first_not_of(" \t\r\n");
+    if (b == std::string::npos) return "";
+    size_t e = s.find_last_not_of(" \t\r\n");
+    return s.substr(b, e - b + 1);
+}
+
+// POSTs to the share-link resolver, doing the usual CSRF two-step.
+static std::string ResolveShareLink(const std::string& shareCode, const std::string& cookie) {
+    std::string body = "{\"linkId\":\"" + shareCode + "\",\"linkType\":\"Server\"}";
+    std::vector<std::pair<std::wstring, std::wstring>> headers = {
+        { L"Referer", L"https://www.roblox.com/" },
+        { L"Content-Type", L"application/json" },
+    };
+
+    std::wstring csrf;
+    HttpResponse first = HttpRequest(L"apis.roblox.com", L"/sharelinks/v1/resolve-link", L"POST",
+        cookie, headers, body, &csrf, nullptr);
+    if (first.ok && first.status == 200) return first.body;
+
+    if (csrf.empty()) {
+        Log("[!] Could not obtain a CSRF token to resolve the share link (status " + std::to_string(first.status) + ").");
+        return "";
+    }
+    headers.push_back({ L"X-CSRF-TOKEN", csrf });
+    HttpResponse second = HttpRequest(L"apis.roblox.com", L"/sharelinks/v1/resolve-link", L"POST",
+        cookie, headers, body, nullptr, nullptr);
+    if (!second.ok || second.status != 200) {
+        Log("[!] Share link resolve failed (status " + std::to_string(second.status) + ").");
+        return "";
+    }
+    return second.body;
+}
+
+bool ResolvePrivateServerLink(const std::string& input, const std::string& cookie, PrivateServer& out) {
+    std::string s = TrimCopy(input);
+    if (s.empty()) { Log("[!] Paste a private server link first."); return false; }
+
+    // Form 2: a direct game URL carrying the link code.
+    std::string direct = QueryParam(s, "privateServerLinkCode");
+    if (!direct.empty()) {
+        long long placeId = 0;
+        size_t g = s.find("/games/");
+        if (g != std::string::npos) { try { placeId = std::stoll(s.substr(g + 7)); } catch (...) {} }
+        if (placeId <= 0) placeId = savedPlaceId.load();
+        if (placeId <= 0) { Log("[!] Could not tell which place that private server link is for - set a Place ID first."); return false; }
+        out.placeId = placeId;
+        out.linkCode = direct;
+        return true;
+    }
+
+    // Form 1/3: a share link (or the bare share code).
+    std::string code = QueryParam(s, "code");
+    if (code.empty()) {
+        // treat the whole string as a bare code if it has no URL punctuation
+        if (s.find_first_of("/?&= ") != std::string::npos) {
+            Log("[!] That does not look like a private server link.");
+            return false;
+        }
+        code = s;
+    }
+    if (code.size() < 8) { Log("[!] That share code looks too short."); return false; }
+
+    if (cookie.empty()) { Log("[!] Add an account first - share links can only be resolved while signed in."); return false; }
+
+    privateServerResolving.store(true);
+    std::string body = ResolveShareLink(code, cookie);
+    privateServerResolving.store(false);
+    if (body.empty()) return false;
+
+    std::string linkCode = ExtractJsonStringField(body, "linkCode");
+    long long placeId = ExtractJsonLongField(body, "placeId");
+    if (linkCode.empty() || placeId <= 0) {
+        Log("[!] The share link did not resolve to a private server (it may be expired or revoked).");
+        return false;
+    }
+    std::string status = ExtractJsonStringField(body, "status");
+    if (!status.empty() && status != "Valid") {
+        Log("[!] Private server link status: " + status + ".");
+        return false;
+    }
+
+    out.placeId = placeId;
+    out.linkCode = linkCode;
+    return true;
+}
+
+// ---- Roblox build manager (downgrade / force live) -------------------------
+std::mutex robloxBuildMutex;
+RobloxBuildState robloxBuild;
+std::vector<std::string> downloadedBuilds;
+
+static std::filesystem::path BuildsRoot() { return std::filesystem::path(g_exeDir) / "Builds"; }
+static std::wstring ActiveBuildFilePath() { return g_exeDir + L"\\activebuild.dat"; }
+
+// Where each deployment package unpacks to, relative to the build root. Mirrors
+// the layout Roblox's own bootstrapper (and RDD) uses for WindowsPlayer.
+struct PackageDir { const char* package; const char* dir; };
+static const PackageDir kPlayerPackages[] = {
+    { "RobloxApp.zip",                      ""                                              },
+    { "WebView2.zip",                       ""                                              },
+    { "shaders.zip",                        "shaders/"                                      },
+    { "ssl.zip",                            "ssl/"                                          },
+    { "content-avatar.zip",                 "content/avatar/"                               },
+    { "content-configs.zip",                "content/configs/"                              },
+    { "content-fonts.zip",                  "content/fonts/"                                },
+    { "content-sky.zip",                    "content/sky/"                                  },
+    { "content-sounds.zip",                 "content/sounds/"                               },
+    { "content-textures2.zip",              "content/textures/"                             },
+    { "content-models.zip",                 "content/models/"                               },
+    { "content-platform-fonts.zip",         "PlatformContent/pc/fonts/"                     },
+    { "content-platform-dictionaries.zip",  "PlatformContent/pc/shared_compression_dictionaries/" },
+    { "content-terrain.zip",                "PlatformContent/pc/terrain/"                   },
+    { "content-textures3.zip",              "PlatformContent/pc/textures/"                  },
+    { "extracontent-luapackages.zip",       "ExtraContent/LuaPackages/"                     },
+    { "extracontent-translations.zip",      "ExtraContent/translations/"                    },
+    { "extracontent-models.zip",            "ExtraContent/models/"                          },
+    { "extracontent-textures.zip",          "ExtraContent/textures/"                        },
+    { "extracontent-places.zip",            "ExtraContent/places/"                          },
+};
+
+static const char* PackageDestination(const std::string& package) {
+    for (const auto& p : kPlayerPackages) if (package == p.package) return p.dir;
+    return nullptr; // unknown / installer-only package - skipped
+}
+
+static void SetBuildStatus(const std::string& text, float progress, bool busy) {
+    std::lock_guard<std::mutex> lock(robloxBuildMutex);
+    robloxBuild.status = text;
+    robloxBuild.progress = progress;
+    robloxBuild.busy = busy;
+}
+
+static void RescanDownloadedBuildsLocked() {
+    downloadedBuilds.clear();
+    std::error_code ec;
+    if (!std::filesystem::exists(BuildsRoot(), ec)) return;
+    for (auto& entry : std::filesystem::directory_iterator(BuildsRoot(), ec)) {
+        if (ec || !entry.is_directory(ec)) continue;
+        if (std::filesystem::exists(entry.path() / "RobloxPlayerBeta.exe", ec))
+            downloadedBuilds.push_back(entry.path().filename().string());
+    }
+    std::sort(downloadedBuilds.begin(), downloadedBuilds.end());
+}
+
+void LoadRobloxBuilds() {
+    // line 1 = the build to launch ("-" when off), line 2 = the last build that
+    // was switched on, so toggling back on picks the same one.
+    std::string active, preferred;
+    std::wstring path = ActiveBuildFilePath();
+    if (std::filesystem::exists(path)) {
+        std::ifstream f(path.c_str());
+        std::getline(f, active);
+        std::getline(f, preferred);
+        auto trim = [](std::string& s) {
+            while (!s.empty() && (s.back() == '\r' || s.back() == ' ')) s.pop_back();
+        };
+        trim(active);
+        trim(preferred);
+        if (active == "-") active.clear();
+        if (preferred.empty()) preferred = active;
+    }
+    std::lock_guard<std::mutex> lock(robloxBuildMutex);
+    RescanDownloadedBuildsLocked();
+    auto onDisk = [&](const std::string& h) {
+        return !h.empty() && std::find(downloadedBuilds.begin(), downloadedBuilds.end(), h) != downloadedBuilds.end();
+    };
+    // only honour either one if that build is actually still on disk
+    if (onDisk(active)) robloxBuild.activeVersion = active;
+    if (onDisk(preferred)) robloxBuild.preferredVersion = preferred;
+}
+
+void SetActiveBuild(const std::string& versionHash) {
+    std::string preferred;
+    {
+        std::lock_guard<std::mutex> lock(robloxBuildMutex);
+        robloxBuild.activeVersion = versionHash;
+        if (!versionHash.empty()) robloxBuild.preferredVersion = versionHash;
+        preferred = robloxBuild.preferredVersion;
+    }
+    {
+        std::ofstream f(ActiveBuildFilePath().c_str(), std::ios::trunc);
+        if (f) f << (versionHash.empty() ? "-" : versionHash) << '\n' << preferred << '\n';
+    }
+    if (versionHash.empty()) {
+        Log("[i] Using the system-installed Roblox client again.");
+        AddActivity("Roblox build", "System install");
+    } else {
+        Log("[v] Launches will now use " + versionHash + ".");
+        AddActivity("Roblox build activated", versionHash);
+    }
+}
+
+void DeleteBuild(const std::string& versionHash) {
+    if (versionHash.empty()) return;
+    std::error_code ec;
+    std::filesystem::remove_all(BuildsRoot() / versionHash, ec);
+    bool wasActive;
+    {
+        std::lock_guard<std::mutex> lock(robloxBuildMutex);
+        wasActive = (robloxBuild.activeVersion == versionHash);
+        RescanDownloadedBuildsLocked();
+    }
+    if (wasActive) SetActiveBuild("");
+    Log("[i] Removed build " + versionHash + ".");
+}
+
+void FetchWeaoVersions() {
+    // WEAO gates its API on this exact user agent (docs.weao.xyz).
+    std::vector<std::pair<std::wstring, std::wstring>> hdrs = { { L"User-Agent", L"WEAO-3PService" } };
+    HttpResponse cur = HttpRequest(L"weao.xyz", L"/api/versions/current", L"GET", "", hdrs, "");
+    if (!cur.ok || cur.status != 200) {
+        Log("[!] Could not reach the WEAO version API (status " + std::to_string(cur.status) + ").");
+        return;
+    }
+    std::string live = ExtractJsonStringField(cur.body, "Windows");
+    std::string liveDate = ExtractJsonStringField(cur.body, "WindowsDate");
+
+    HttpResponse fut = HttpRequest(L"weao.xyz", L"/api/versions/future", L"GET", "", hdrs, "");
+    std::string future;
+    if (fut.ok && fut.status == 200) future = ExtractJsonStringField(fut.body, "Windows");
+    if (future == live) future.clear();
+
+    HttpResponse past = HttpRequest(L"weao.xyz", L"/api/versions/past", L"GET", "", hdrs, "");
+    std::string prev, prevDate;
+    if (past.ok && past.status == 200) {
+        prev = ExtractJsonStringField(past.body, "Windows");
+        prevDate = ExtractJsonStringField(past.body, "WindowsDate");
+    }
+    if (prev == live) prev.clear();
+
+    std::lock_guard<std::mutex> lock(robloxBuildMutex);
+    robloxBuild.liveVersion = live;
+    robloxBuild.liveDate = liveDate;
+    robloxBuild.futureVersion = future;
+    robloxBuild.pastVersion = prev;
+    robloxBuild.pastDate = prevDate;
+    robloxBuild.weaoLoaded = !live.empty();
+}
+
+// Streams a URL straight to disk so a 100 MB package never sits in memory.
+// onProgress (may be null) receives 0..1 as the bytes arrive.
+static bool DownloadToFile(const std::string& url, const std::filesystem::path& dest,
+                           const std::function<void(float)>& onProgress = nullptr) {
+    std::wstring host, path;
+    if (!SplitHttpsUrl(url, host, path)) return false;
+
+    HINTERNET hSession = WinHttpOpen(L"VelsMultiTool/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) return false;
+    // Without explicit timeouts a stalled CDN socket can park a read forever,
+    // which looks exactly like a frozen progress bar.
+    WinHttpSetTimeouts(hSession, 30000, 30000, 60000, 60000);
+    HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hConnect) { WinHttpCloseHandle(hSession); return false; }
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", path.c_str(), nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (!hRequest) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return false; }
+
+    bool ok = false;
+    if (WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0, nullptr, 0, 0, 0) &&
+        WinHttpReceiveResponse(hRequest, nullptr)) {
+        DWORD status = 0, size = sizeof(status);
+        WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+            WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX);
+        if (status == 200) {
+            // Content-Length lets us report a real percentage while the bytes land.
+            long long total = 0;
+            {
+                DWORD len = 0, lsz = sizeof(len);
+                if (WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                        WINHTTP_HEADER_NAME_BY_INDEX, &len, &lsz, WINHTTP_NO_HEADER_INDEX))
+                    total = (long long)len;
+            }
+            std::ofstream out(dest, std::ios::binary | std::ios::trunc);
+            if (out) {
+                ok = true;
+                long long got = 0;
+                DWORD available = 0;
+                while (WinHttpQueryDataAvailable(hRequest, &available) && available > 0) {
+                    std::vector<char> buf(available);
+                    DWORD read = 0;
+                    if (!WinHttpReadData(hRequest, buf.data(), available, &read)) { ok = false; break; }
+                    out.write(buf.data(), read);
+                    got += read;
+                    if (onProgress && total > 0) onProgress((float)((double)got / (double)total));
+                }
+                out.close();
+                // A dropped connection ends the loop quietly, leaving a short
+                // file that would only blow up later inside tar - catch it here.
+                if (ok && total > 0 && got < total) {
+                    Log("[!] " + dest.filename().string() + " stopped short (" +
+                        std::to_string(got) + " of " + std::to_string(total) + " bytes).");
+                    ok = false;
+                }
+            }
+        }
+    }
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+    if (!ok) { std::error_code ec; std::filesystem::remove(dest, ec); }
+    return ok;
+}
+
+// Unpacks a zip with the tar.exe that ships with Windows 10 1803+ (bsdtar reads
+// zips), so we don't have to vendor a deflate implementation.
+static bool ExtractZip(const std::filesystem::path& zip, const std::filesystem::path& dest) {
+    std::error_code ec;
+    std::filesystem::create_directories(dest, ec);
+
+    // A trailing backslash would escape the closing quote on the command line
+    // ("C:\dir\" parses as C:\dir"), so tar would try to chdir into a path with
+    // a quote glued on the end and fail every single time.
+    std::wstring destArg = dest.wstring();
+    while (!destArg.empty() && (destArg.back() == L'\\' || destArg.back() == L'/')) destArg.pop_back();
+
+    std::wstring cmd = L"tar.exe -xf \"" + zip.wstring() + L"\" -C \"" + destArg + L"\"";
+    std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+    buf.push_back(0);
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+            nullptr, nullptr, &si, &pi)) {
+        Log("[!] Could not run tar.exe to unpack " + zip.filename().string() + ".");
+        return false;
+    }
+    // Never wait forever - a wedged tar would freeze the whole install with no
+    // way out but killing the app.
+    DWORD code = 1;
+    if (WaitForSingleObject(pi.hProcess, 10 * 60 * 1000) == WAIT_TIMEOUT) {
+        Log("[!] tar.exe hung unpacking " + zip.filename().string() + " - killing it.");
+        TerminateProcess(pi.hProcess, 1);
+    } else {
+        GetExitCodeProcess(pi.hProcess, &code);
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return code == 0;
+}
+
+void DownloadRobloxBuild(std::string versionHash) {
+    {
+        std::lock_guard<std::mutex> lock(robloxBuildMutex);
+        if (robloxBuild.busy) { Log("[!] A build download is already running."); return; }
+        robloxBuild.busy = true;
+    }
+    struct BusyGuard {
+        ~BusyGuard() { std::lock_guard<std::mutex> lock(robloxBuildMutex); robloxBuild.busy = false; }
+    } guard;
+
+    // No hash given: use whatever WEAO says is live right now.
+    if (versionHash.empty()) {
+        SetBuildStatus("Checking live version...", 0.0f, true);
+        FetchWeaoVersions();
+        std::lock_guard<std::mutex> lock(robloxBuildMutex);
+        versionHash = robloxBuild.liveVersion;
+    }
+    if (versionHash.rfind("version-", 0) != 0) {
+        SetBuildStatus("", 0.0f, false);
+        Log("[!] That is not a Roblox version hash (they look like version-abc123...).");
+        return;
+    }
+
+    std::filesystem::path buildDir = BuildsRoot() / versionHash;
+    std::error_code ec;
+    if (std::filesystem::exists(buildDir / "RobloxPlayerBeta.exe", ec)) {
+        SetBuildStatus("", 0.0f, false);
+        SetActiveBuild(versionHash);
+        return; // already downloaded - just switch to it
+    }
+
+    SetBuildStatus("Fetching manifest...", 0.02f, true);
+    std::string base = "https://setup.rbxcdn.com/" + versionHash + "-";
+    std::vector<unsigned char> manifest = DownloadBinary(base + "rbxPkgManifest.txt");
+    if (manifest.empty()) {
+        SetBuildStatus("", 0.0f, false);
+        Log("[!] No deployment found for " + versionHash + " - check the hash on rdd.weao.gg.");
+        return;
+    }
+
+    // The manifest lists packages in blocks; we only care about the .zip names.
+    std::vector<std::string> packages;
+    {
+        std::istringstream ms(std::string(manifest.begin(), manifest.end()));
+        std::string line;
+        while (std::getline(ms, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.size() > 4 && line.substr(line.size() - 4) == ".zip" && PackageDestination(line))
+                packages.push_back(line);
+        }
+    }
+    if (packages.empty()) {
+        SetBuildStatus("", 0.0f, false);
+        Log("[!] The manifest for " + versionHash + " had no player packages (wrong binary type?).");
+        return;
+    }
+
+    std::filesystem::path tmpDir = buildDir / "_pkg";
+    std::filesystem::create_directories(tmpDir, ec);
+
+    for (size_t i = 0; i < packages.size(); ++i) {
+        const std::string& pkg = packages[i];
+        const float slice = 0.9f / (float)packages.size();
+        const float base01 = 0.05f + slice * (float)i;
+        std::string label = "Downloading " + pkg + " (" + std::to_string(i + 1) + "/" +
+            std::to_string(packages.size()) + ")";
+        SetBuildStatus(label, base01, true);
+
+        std::filesystem::path zip = tmpDir / pkg;
+        // The CDN drops long transfers now and then, so a package gets a few
+        // attempts before the whole install is written off.
+        bool got = false;
+        for (int attempt = 1; attempt <= 3 && !got; ++attempt) {
+            std::string attemptLabel = attempt == 1 ? label : label + "  retry " + std::to_string(attempt) + "/3";
+            SetBuildStatus(attemptLabel, base01, true);
+            auto onProgress = [&](float f) { SetBuildStatus(attemptLabel, base01 + slice * 0.8f * f, true); };
+            got = DownloadToFile(base + pkg, zip, onProgress);
+            if (!got) std::this_thread::sleep_for(std::chrono::milliseconds(800));
+        }
+        if (!got) {
+            SetBuildStatus("", 0.0f, false);
+            Log("[!] Failed to download " + pkg + " after 3 attempts - aborting.");
+            std::filesystem::remove_all(buildDir, ec);
+            return;
+        }
+        SetBuildStatus("Unpacking " + pkg + " (" + std::to_string(i + 1) + "/" +
+            std::to_string(packages.size()) + ")", base01 + slice * 0.85f, true);
+        if (!ExtractZip(zip, buildDir / PackageDestination(pkg))) {
+            SetBuildStatus("", 0.0f, false);
+            Log("[!] Failed to unpack " + pkg + " - aborting.");
+            std::filesystem::remove_all(buildDir, ec);
+            return;
+        }
+        std::filesystem::remove(zip, ec);
+    }
+    std::filesystem::remove_all(tmpDir, ec);
+
+    // The client refuses to start without this next to the exe.
+    {
+        std::ofstream app(buildDir / "AppSettings.xml", std::ios::trunc);
+        app << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"
+            << "<Settings>\r\n"
+            << "\t<ContentFolder>content</ContentFolder>\r\n"
+            << "\t<BaseUrl>http://www.roblox.com</BaseUrl>\r\n"
+            << "</Settings>\r\n";
+    }
+
+    if (!std::filesystem::exists(buildDir / "RobloxPlayerBeta.exe", ec)) {
+        SetBuildStatus("", 0.0f, false);
+        Log("[!] " + versionHash + " unpacked without a player executable - removing it.");
+        std::filesystem::remove_all(buildDir, ec);
+        return;
+    }
+
+    { std::lock_guard<std::mutex> lock(robloxBuildMutex); RescanDownloadedBuildsLocked(); }
+    SetBuildStatus("", 0.0f, false);
+    Log("[v] Installed " + versionHash + ".");
+    SetActiveBuild(versionHash);
+}
+
+void ForceLiveBuild() {
+    SetBuildStatus("Checking live version...", 0.02f, true);
+    FetchWeaoVersions();
+    std::string live;
+    { std::lock_guard<std::mutex> lock(robloxBuildMutex); live = robloxBuild.liveVersion; robloxBuild.busy = false; }
+    if (live.empty()) {
+        SetBuildStatus("", 0.0f, false);
+        Log("[!] Could not determine the live version from WEAO.");
+        return;
+    }
+    DownloadRobloxBuild(live);
+}
+
+void DownloadPreviousBuild() {
+    SetBuildStatus("Checking previous version...", 0.02f, true);
+    FetchWeaoVersions();
+    std::string prev;
+    { std::lock_guard<std::mutex> lock(robloxBuildMutex); prev = robloxBuild.pastVersion; robloxBuild.busy = false; }
+    if (prev.empty()) {
+        SetBuildStatus("", 0.0f, false);
+        Log("[!] WEAO did not report a previous Windows version.");
+        return;
+    }
+    DownloadRobloxBuild(prev);
 }
 
 void AddActivity(const std::string& title, const std::string& subtitle) {
