@@ -16,11 +16,6 @@
 
 namespace login {
 
-// ---------------------------------------------------------------------------
-// Tiny ad-hoc JSON field readers. The Chrome DevTools Protocol responses we
-// parse here have a small, predictable shape, so a couple of substring
-// searches are enough - no need to pull in a JSON library for this.
-// ---------------------------------------------------------------------------
 static std::string ExtractJsonString(const std::string& json, const std::string& key, size_t from = 0) {
     std::string pat = "\"" + key + "\":";
     size_t pos = json.find(pat, from);
@@ -34,8 +29,6 @@ static std::string ExtractJsonString(const std::string& json, const std::string&
     return json.substr(pos, end - pos);
 }
 
-// Finds the page target's websocket debugger path out of a /json/list body,
-// e.g. "/devtools/page/XXXX" from "ws://127.0.0.1:54321/devtools/page/XXXX".
 static std::wstring ExtractPageWebSocketPath(const std::string& json) {
     size_t typePos = json.find("\"type\":\"page\"");
     if (typePos == std::string::npos) typePos = json.find("\"type\": \"page\"");
@@ -54,9 +47,6 @@ static std::string ExtractCookieValue(const std::string& json, const std::string
     return ExtractJsonString(json, "value", pos);
 }
 
-// A real .ROBLOSECURITY session cookie always carries this warning banner and
-// runs several hundred characters - short enough to rule out the placeholder
-// values Roblox sometimes sets before sign-in completes.
 static bool LooksLikeRealSecurityCookie(const std::string& value) {
     return value.size() > 100 && value.find("WARNING:-DO-NOT-SHARE-THIS") != std::string::npos;
 }
@@ -117,10 +107,6 @@ static int PickFreeLocalPort() {
     return port;
 }
 
-// ---------------------------------------------------------------------------
-// Minimal WinHTTP helpers: a plain localhost GET (for /json/list) and a
-// blocking WebSocket send/receive pair (for the devtools protocol itself).
-// ---------------------------------------------------------------------------
 static std::string HttpGetLocal(int port, const std::wstring& path) {
     std::string result;
     HINTERNET hSession = WinHttpOpen(L"VelsMultiTool/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY,
@@ -195,7 +181,6 @@ static bool WsReceiveText(HINTERNET ws, std::string& out) {
             bufType == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE) {
             return true;
         }
-        // else a _FRAGMENT type - the message continues, keep reading.
     }
 }
 
@@ -209,8 +194,6 @@ void ShowRobloxLoginWindow(const std::wstring& exeDir,
         return;
     }
 
-    // Use a fresh throwaway profile for every login so a stale browser lock or
-    // old Roblox session can never be reused by the next Add Account attempt.
     std::wstring profileRoot = exeDir + L"\\chrome_login_data";
     std::wstring profileDir = MakeLoginProfileDir(exeDir);
     int port = PickFreeLocalPort();
@@ -316,9 +299,6 @@ void ShowRobloxLoginWindow(const std::wstring& exeDir,
     onComplete(success, success ? foundCookie : "");
 }
 
-// Minimal JSON string escaper for the cookie value we inject via CDP. A
-// .ROBLOSECURITY value is base64-ish (no quotes/backslashes in practice), but we
-// escape defensively so a stray character can't break the JSON command.
 static std::string JsonEscape(const std::string& s) {
     std::string o;
     o.reserve(s.size() + 8);
@@ -330,7 +310,7 @@ static std::string JsonEscape(const std::string& s) {
             case '\r': o += "\\r"; break;
             case '\t': o += "\\t"; break;
             default:
-                if ((unsigned char)c >= 0x20) o += c; // drop other control chars
+                if ((unsigned char)c >= 0x20) o += c;
                 break;
         }
     }
@@ -351,8 +331,6 @@ void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie
         return;
     }
 
-    // Persistent, per-account profile so each account gets its own isolated
-    // browser instance and stays logged in between opens.
     std::wstring profileDir = exeDir + L"\\web_profiles\\acct_" +
         (userId > 0 ? std::to_wstring(userId) : L"default");
     int port = PickFreeLocalPort();
@@ -378,8 +356,6 @@ void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie
         return;
     }
     CloseHandle(pi.hThread);
-    // Intentionally leave the browser running and the profile on disk; just drop
-    // our own handle to the process.
     if (pi.hProcess) CloseHandle(pi.hProcess);
 
     backend::Log("[i] Opened a browser window for " + username + ".");
@@ -391,8 +367,6 @@ void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie
         Sleep(100);
     }
     if (wsPath.empty()) {
-        // Most likely this account's profile was already open in another window;
-        // the browser is up, we just couldn't drive it to (re)inject the cookie.
         backend::Log("[!] Browser is open, but its automation port wasn't reachable to set the cookie.");
         return;
     }
@@ -414,7 +388,7 @@ void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie
         req += "}";
         if (!WsSendText(hWebSocket, req)) return false;
         std::string idPat = "\"id\":" + std::to_string(id);
-        for (int i = 0; i < 60; ++i) { // skip interleaved CDP events until our reply
+        for (int i = 0; i < 60; ++i) {
             std::string resp;
             if (!WsReceiveText(hWebSocket, resp)) return false;
             if (resp.find(idPat) != std::string::npos) return true;
@@ -437,4 +411,4 @@ void OpenAccountWebSession(const std::wstring& exeDir, const std::string& cookie
     else backend::Log("[!] Opened the browser but couldn't confirm the session cookie for " + username + ".");
 }
 
-} // namespace login
+}
