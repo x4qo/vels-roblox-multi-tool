@@ -1,5 +1,3 @@
-// Vels Multi Tool - Dear ImGui front-end (Win32 + DirectX 11 backend).
-// All Roblox/cookie/MAC logic lives in backend.cpp; this file is UI only.
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -39,9 +37,6 @@
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-// ---------------------------------------------------------------------------
-// D3D11 boilerplate (standard Dear ImGui example pattern)
-// ---------------------------------------------------------------------------
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain* g_pSwapChain = nullptr;
@@ -49,41 +44,16 @@ static bool g_SwapChainOccluded = false;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 static bool g_swapChainIsFlipModel = false;
 
-// ---------------------------------------------------------------------------
-// Idle scheduling
-//
-// The old loop rendered a fresh 60 Hz frame forever, even when the window was
-// buried behind a full-screen Roblox client with nobody looking at it. That
-// burns a CPU core building draw lists nobody sees and, worse, keeps queueing
-// GPU work + DWM composition every 16 ms, which is what shows up as Roblox
-// losing frames while this tool is open.
-//
-// Instead the loop now only renders when there is a reason to, and otherwise
-// blocks in MsgWaitForMultipleObjectsEx (true 0% CPU sleep, wakes instantly on
-// input). "A reason" is: recent input, an animation still settling, or the
-// ambient starfield when the window is actually in the foreground. When we're
-// not the foreground window every animation freezes and we drop to a slow
-// housekeeping tick that only exists so background results (avatars, watcher
-// counts) still appear if the user is watching from the side.
-// ---------------------------------------------------------------------------
 namespace idlectl {
-    // Animation time base. Advances only on frames we actually render *and*
-    // only while animation is allowed, so freezing costs nothing and never
-    // makes the starfield teleport when it resumes.
     static double animTime = 0.0;
 
-    static bool  windowActive = true;   // foreground?
-    static bool  cursorInside = false;  // mouse over our client area?
-    static int   forceFrames = 4;       // frames still owed after a wake event
-    static double lastInteract = 0.0;   // animTime of the last real input
+    static bool  windowActive = true;
+    static bool  cursorInside = false;
+    static int   forceFrames = 4;
+    static double lastInteract = 0.0;
 
     inline void RequestFrames(int n) { if (n > forceFrames) forceFrames = n; }
 
-    // Hand the resident working set back to Windows when nobody is looking at
-    // us. Everything that matters is either still committed (and paged back in
-    // on demand) or trivially rebuilt, so this drops the reported memory of an
-    // idle/minimized tool to a fraction of its active footprint - and frees
-    // real physical pages for the game in the foreground.
     static void TrimWorkingSet() {
         SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
     }
@@ -120,10 +90,6 @@ static bool CreateDeviceD3D(HWND hWnd) {
     sd.SampleDesc.Count = 1;
     sd.SampleDesc.Quality = 0;
     sd.Windowed = TRUE;
-    // Flip model: DWM samples our back buffer directly instead of blitting a
-    // full-window copy on every Present. That copy is pure GPU + composition
-    // work stolen from whatever else is drawing (i.e. Roblox), so the blt
-    // model below is only a fallback for machines that reject flip.
     sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     sd.BufferCount = 2;
 
@@ -132,7 +98,7 @@ static bool CreateDeviceD3D(HWND hWnd) {
     const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
     HRESULT res = S_FALSE;
     for (int attempt = 0; attempt < 2; ++attempt) {
-        if (attempt == 1) { // pre-Win10 / driver without flip support
+        if (attempt == 1) {
             sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
             sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
         }
@@ -145,9 +111,6 @@ static bool CreateDeviceD3D(HWND hWnd) {
     }
     if (res != S_OK) return false;
 
-    // Don't let DXGI queue frames ahead of us: a deep queue means the driver
-    // is holding on to GPU work (and memory) for frames we already know we
-    // won't need, and it makes Present() latency spiky next to a game.
     IDXGIDevice1* dxgiDev = nullptr;
     if (SUCCEEDED(g_pd3dDevice->QueryInterface(IID_PPV_ARGS(&dxgiDev)))) {
         dxgiDev->SetMaximumFrameLatency(1);
@@ -165,11 +128,6 @@ static void CleanupDeviceD3D() {
     if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
 }
 
-// ---------------------------------------------------------------------------
-// Image loading: decode downloaded PNG bytes (WIC) into a D3D11 texture.
-// Decoding happens on the UI thread on demand (cheap for small thumbnails);
-// only the network download is backgrounded, in backend.cpp.
-// ---------------------------------------------------------------------------
 static ID3D11ShaderResourceView* CreateTextureFromImageBytes(const std::vector<unsigned char>& bytes) {
     if (bytes.empty() || !g_pd3dDevice) return nullptr;
 
@@ -230,7 +188,6 @@ static ID3D11ShaderResourceView* CreateTextureFromImageBytes(const std::vector<u
     return srv;
 }
 
-// Keyed by Roblox userId. A cached nullptr means "decode already attempted and failed" - avoids retrying every frame.
 static std::unordered_map<long long, ID3D11ShaderResourceView*> g_avatarTextures;
 static ID3D11ShaderResourceView* g_placeIconTexture = nullptr;
 static long long g_placeIconForPlaceId = 0;
@@ -244,8 +201,6 @@ static ID3D11ShaderResourceView* GetOrCreateAvatarTexture(const RobloxAccount& a
     return srv;
 }
 
-// Caller must already hold (and release) backend::placeInfoMutex before calling this -
-// it touches no shared state itself, so it's safe to call with or without that lock held.
 static ID3D11ShaderResourceView* GetOrCreatePlaceIconTexture(long long placeId, const std::vector<unsigned char>& iconPng) {
     if (iconPng.empty()) return nullptr;
     if (g_placeIconForPlaceId == placeId) return g_placeIconTexture;
@@ -255,33 +210,16 @@ static ID3D11ShaderResourceView* GetOrCreatePlaceIconTexture(long long placeId, 
     return g_placeIconTexture;
 }
 
-// Client-space rects of the custom titlebar's min/max/close buttons, updated
-// every frame by DrawTitleBar() so WM_NCHITTEST can carve them out of the
-// otherwise-draggable caption area.
 static std::wstring g_exeDir;
-// Client height the Account Manager layout wants; the frame loop grows/shrinks
-// the window to match so the page never ends in dead space.
 static float g_desiredClientH = 0.0f;
 static RECT g_btnMinRect = {};
 static RECT g_btnMaxRect = {};
 static RECT g_btnCloseRect = {};
 const int TITLEBAR_H = 34;
 
-// Per-widget animation state: smoothly eases toward +1 (hovered) or -1
-// (pressed), settling at 0 at rest, so buttons/nav items/chips "pop" in and
-// out instead of snapping instantly between style states. Declared up here
-// (rather than down with the rest of the UI helpers) so WndProc can clear it
-// directly on focus changes - see WM_ACTIVATE below.
 static std::unordered_map<ImGuiID, float> g_widgetAnim;
 static int g_pendingNavPage = -1;
 
-// Same radius as the decorative border main() draws just inside the window
-// edge. The window's *actual* shape needs to match that radius exactly -
-// otherwise the area between the drawn rounded outline and the window's
-// real (square) physical corner shows through as a solid near-black sliver,
-// which is what looked like "black corners" leaking out. Maximized windows
-// stay a plain rectangle (rounding a window flush against the screen edge
-// looks broken), everything else gets the rounded region.
 const int WINDOW_CORNER_RADIUS = 12;
 
 static void ApplyWindowShape(HWND hWnd, int width, int height) {
@@ -313,37 +251,19 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         idlectl::RequestFrames(2);
         return 0;
     case WM_ERASEBKGND:
-        // Without this, Windows can paint its own default (white) background
-        // for a frame before our D3D content is presented - e.g. right after
-        // switching back to this window from another app - which is exactly
-        // the white flash this is meant to prevent. Claim we handled erasing
-        // and do nothing, since every pixel comes from Present() anyway.
         return 1;
     case WM_ACTIVATE:
     case WM_KILLFOCUS:
-        // Switching to another app (Discord, Spotify, alt-tab, ...) doesn't
-        // necessarily move the mouse anywhere - it can sit exactly where it
-        // was over a sidebar item the whole time. Win32 only fires
-        // WM_MOUSELEAVE when the cursor physically exits the window, so
-        // without this, a button's hover animation target stays "hovered"
-        // indefinitely while this window isn't even active, and is still
-        // mid-animation (or stuck) by the time focus returns - read as a
-        // stale highlight that "lingers". Wiping all animation state on
-        // every focus transition guarantees nothing is left mid-flight.
         g_widgetAnim.clear();
         if (msg == WM_ACTIVATE) idlectl::windowActive = (LOWORD(wParam) != WA_INACTIVE);
         else idlectl::windowActive = false;
-        // Losing focus stops all animation; gaining it needs a couple of
-        // frames to redraw with the active styling before we idle again.
         idlectl::RequestFrames(idlectl::windowActive ? 4 : 2);
         break;
     case WM_SYSCOMMAND:
-        if ((wParam & 0xfff0) == SC_KEYMENU) return 0; // disable ALT menu beep
+        if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
         break;
     case WM_NCCALCSIZE: {
         if (!wParam) break;
-        // Drop the native caption/border entirely; when maximized, clamp to
-        // the monitor's work area so the window doesn't cover the taskbar.
         if (IsZoomed(hWnd)) {
             NCCALCSIZE_PARAMS* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
             MONITORINFO mi = { sizeof(mi) };
@@ -354,9 +274,6 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
     }
     case WM_NCHITTEST: {
-        // Without WS_CAPTION, DefWindowProc only ever reports resize-edge
-        // hits (still works thanks to WS_THICKFRAME) or HTCLIENT. We turn
-        // the top strip - minus our own button rects - into the drag region.
         LRESULT hit = DefWindowProcW(hWnd, msg, wParam, lParam);
         if (hit != HTCLIENT) return hit;
 
@@ -376,9 +293,6 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-// ---------------------------------------------------------------------------
-// Theme
-// ---------------------------------------------------------------------------
 namespace theme {
     bool darkMode = true;
     ImVec4 bg, sidebarBg, panelBg, panelBg2, glassFill, glassHover, glassActive;
@@ -394,8 +308,6 @@ namespace theme {
     void SetMode(bool dark) {
         darkMode = dark;
         if (dark) {
-            // Dark-grey canvas with slightly-lifted card panels on top, thin
-            // cool-gray borders, grey accent.
             bg = ImVec4(0.055f, 0.057f, 0.063f, 1.00f);
             sidebarBg = ImVec4(0.050f, 0.052f, 0.058f, 0.98f);
             panelBg = ImVec4(0.055f, 0.057f, 0.063f, 1.00f);
@@ -489,13 +401,12 @@ namespace theme {
                                        : ImVec4(0.985f, 0.987f, 0.996f, 1.0f);
     }
 
-    // --- animated starfield background ---
-    std::vector<ImVec2> stars;       // normalized [0,1] base positions
+    std::vector<ImVec2> stars;
     std::vector<float> starSize;
-    std::vector<float> starAlpha;    // peak alpha
+    std::vector<float> starAlpha;
     std::vector<float> starTwinkleSpeed;
     std::vector<float> starTwinklePhase;
-    std::vector<float> starDrift;    // normalized units per second, vertical
+    std::vector<float> starDrift;
 
     void GenerateStars(int count) {
         stars.clear(); starSize.clear(); starAlpha.clear();
@@ -519,25 +430,17 @@ namespace theme {
 
     void DrawStarfield(ImVec2 origin, ImVec2 size) {
         ImDrawList* dl = ImGui::GetBackgroundDrawList();
-        // Frozen-capable clock (see idlectl) rather than ImGui::GetTime(), so
-        // the field simply stops while nothing is rendering instead of
-        // jumping forward by however long we were asleep.
         float t = (float)idlectl::animTime;
         for (size_t i = 0; i < stars.size(); ++i) {
             float yNorm = stars[i].y + t * starDrift[i];
-            yNorm -= floorf(yNorm); // wrap into [0,1) - slow downward drift, loops seamlessly
+            yNorm -= floorf(yNorm);
 
             float twinkle = 0.35f + 0.65f * (0.5f + 0.5f * sinf(t * starTwinkleSpeed[i] + starTwinklePhase[i]));
             float alpha = starAlpha[i] * twinkle;
-            if (alpha < 0.03f) continue; // invisible at this point in the twinkle - don't pay for it
+            if (alpha < 0.03f) continue;
 
             ImVec2 p(origin.x + stars[i].x * size.x, origin.y + yNorm * size.y);
             ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(1, 1, 1, alpha));
-            // A star is 0.45-1.65 px across. ImGui's auto segment count gives
-            // such a circle ~12 segments (12 triangles) for something that
-            // covers a couple of pixels; a fixed 6 (or a 2-triangle quad for
-            // the sub-pixel ones) is visually identical and a fraction of the
-            // vertex/fill cost across 220 of them.
             if (starSize[i] <= 0.9f) {
                 dl->AddRectFilled(ImVec2(p.x - starSize[i], p.y - starSize[i]),
                                   ImVec2(p.x + starSize[i], p.y + starSize[i]), col);
@@ -548,9 +451,6 @@ namespace theme {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Icons (Lucide icon font, MIT licensed - fonts/Lucide.ttf)
-// ---------------------------------------------------------------------------
 namespace icon {
     constexpr unsigned HOME = 0xE0F4;
     constexpr unsigned ROCKET = 0xE286;
@@ -579,12 +479,9 @@ namespace icon {
     constexpr unsigned CLOCK = 0xE24C;
     constexpr unsigned SETTINGS = 0xE152;
     constexpr unsigned CIRCLE_HELP = 0xE0BD;
-    constexpr unsigned COPY = 0xE09E;        // lucide "copy"
-    // Sentinel: draws a plain vector square (no font glyph needed) - used for "Stop".
-    // Real PUA codepoints start at 0xE000, so a tiny value here can never collide.
+    constexpr unsigned COPY = 0xE09E;
     constexpr unsigned STOP_SQ = 1;
 
-    // Encodes a codepoint from the font's private-use area as UTF-8 (always 3 bytes for 0xE000-0xFFFF).
     inline std::string Str(unsigned cp) {
         std::string s;
         s += (char)(0xE0 | (cp >> 12));
@@ -594,7 +491,6 @@ namespace icon {
     }
 }
 
-// Small rounded box with a centered icon glyph - used for nav items, section headers, etc.
 static void IconBox(ImVec2 pos, float size, unsigned codepoint, ImVec4 bg, ImVec4 fg, float rounding = 9.0f) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddRectFilled(pos, ImVec2(pos.x + size, pos.y + size), ImGui::ColorConvertFloat4ToU32(bg), rounding);
@@ -608,22 +504,14 @@ static void IconBox(ImVec2 pos, float size, unsigned codepoint, ImVec4 bg, ImVec
     ImGui::PopFont();
 }
 
-// Soft colored halo built from stacked filled rects, with the per-layer
-// alpha solved exactly (not approximated) so the *composited* opacity right
-// at the shape's edge always equals `peakAlpha`, fading by smoothstep to 0
-// at `spread` pixels outward. Naive stacking (equal alpha per layer, or alpha
-// scaled by a fixed constant) either washes out under many overlapping thin
-// layers or rings visibly under few thick ones; solving each layer's alpha
-// from the *target* cumulative curve via the standard "over" compositing
-// formula (newAlpha = layerAlpha + old*(1-layerAlpha)) avoids both.
 static void DrawSoftRectGlow(ImDrawList* dl, ImVec2 min, ImVec2 max, float rounding, float spread, float peakAlpha,
     ImVec4 color = ImVec4(1, 1, 1, 1)) {
     const int steps = 26;
     float cumulative = 0.0f;
     for (int i = steps; i >= 0; --i) {
-        float t = (float)i / (float)steps;        // 1 (outer edge of halo) -> 0 (at the shape's own edge)
+        float t = (float)i / (float)steps;
         float u = 1.0f - t;
-        float smooth = u * u * (3.0f - 2.0f * u);  // smoothstep target curve
+        float smooth = u * u * (3.0f - 2.0f * u);
         float targetAlpha = peakAlpha * smooth;
         float layerAlpha = (targetAlpha - cumulative) / std::max(1.0f - cumulative, 0.0001f);
         layerAlpha = std::clamp(layerAlpha, 0.0f, 1.0f);
@@ -635,7 +523,6 @@ static void DrawSoftRectGlow(ImDrawList* dl, ImVec2 min, ImVec2 max, float round
     }
 }
 
-// Brand lettermark: stylized white "V" mark on the black sidebar.
 static void DrawLogoMark(ImVec2 pos, float size) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddCircleFilled(ImVec2(pos.x + size * 0.47f, pos.y + size * 0.54f), size * 0.72f,
@@ -661,7 +548,6 @@ static void DrawLogoMark(ImVec2 pos, float size) {
     dl->AddConvexPolyFilled(right, 4, white);
 }
 
-// Inline icon glyph at the current cursor position (no background box).
 static void InlineIcon(unsigned codepoint, ImVec4 col) {
     std::string glyph = icon::Str(codepoint);
     ImGui::PushFont(theme::fontIcon);
@@ -679,11 +565,6 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
     dl->AddRectFilled(ImVec2(0, 0), ImVec2(winWidth, (float)TITLEBAR_H), bgCol);
     dl->AddLine(ImVec2(0, (float)TITLEBAR_H - 0.5f), ImVec2(winWidth, (float)TITLEBAR_H - 0.5f), borderCol, 1.0f);
 
-    // Lightning brand mark, top-left - same silhouette as assets/app.ico so the
-    // in-window mark and the taskbar/window icon actually match. It's a
-    // concave hexagon (a real zigzag notch), so it's triangle-fanned from the
-    // top tip rather than passed to AddConvexPolyFilled, which assumes
-    // convexity and rendered this as a garbled, clipped-looking shape.
     {
         float s = 18.0f;
         float bx = 12.0f, by = TITLEBAR_H * 0.5f - s * 0.5f;
@@ -701,7 +582,6 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
         dl->AddTriangleFilled(p[0], p[3], p[4], accentU);
         dl->AddTriangleFilled(p[0], p[4], p[5], accentU);
     }
-    // centered window title
     {
         const char* title = "Account Manager";
         ImVec2 ts = ImGui::CalcTextSize(title);
@@ -716,7 +596,6 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
         dl->AddRectFilled(ImVec2(x, 0), ImVec2(x + BTN_W, (float)TITLEBAR_H), col);
         };
 
-    // Minimize
     ImGui::SetCursorScreenPos(ImVec2(xMin, 0));
     ImGui::InvisibleButton("##titlebar_min", ImVec2(BTN_W, (float)TITLEBAR_H));
     if (ImGui::IsItemHovered()) hoverFill(xMin, ImGui::ColorConvertFloat4ToU32(theme::glassHover));
@@ -727,7 +606,6 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
     }
     g_btnMinRect = { (LONG)xMin, 0, (LONG)(xMin + BTN_W), (LONG)TITLEBAR_H };
 
-    // Maximize / restore
     ImGui::SetCursorScreenPos(ImVec2(xMax, 0));
     ImGui::InvisibleButton("##titlebar_max", ImVec2(BTN_W, (float)TITLEBAR_H));
     if (ImGui::IsItemHovered()) hoverFill(xMax, ImGui::ColorConvertFloat4ToU32(theme::glassHover));
@@ -744,7 +622,6 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
     }
     g_btnMaxRect = { (LONG)xMax, 0, (LONG)(xMax + BTN_W), (LONG)TITLEBAR_H };
 
-    // Close
     ImGui::SetCursorScreenPos(ImVec2(xClose, 0));
     ImGui::InvisibleButton("##titlebar_close", ImVec2(BTN_W, (float)TITLEBAR_H));
     bool hovClose = ImGui::IsItemHovered();
@@ -761,41 +638,23 @@ static void DrawTitleBar(HWND hwnd, float winWidth) {
     ImGui::SetCursorScreenPos(ImVec2(0, (float)TITLEBAR_H));
 }
 
-// ---------------------------------------------------------------------------
-// Small UI helpers
-// ---------------------------------------------------------------------------
 static float PopAnim(ImGuiID id, bool hovered, bool pressed) {
     float& anim = g_widgetAnim[id];
     float target = pressed ? -1.0f : (hovered ? 1.0f : 0.0f);
     if (target == 0.0f) {
-        // Returning to rest is a hard snap, not an eased decay - even a fast
-        // decay is still *a* fade, which reads as "lingering" when moving
-        // down a list of nav items at normal speed. Nothing to see here
-        // means nothing, the instant the mouse leaves.
         anim = 0.0f;
     } else {
-        float rate = pressed ? 22.0f : 12.0f; // entering hover/press still eases in smoothly (the "pop")
+        float rate = pressed ? 22.0f : 12.0f;
         anim += (target - anim) * std::min(1.0f, ImGui::GetIO().DeltaTime * rate);
     }
     return anim;
 }
 
-// anim in [-1,1]: negative = pressed (shrink), positive = hovered (grow).
-// iconCp == 0 means no icon (just centered text).
-//   - colorOverride: tints the icon, label AND border/fill (a fully colored
-//     button, e.g. destructive red or "go" green).
-//   - iconTint: tints ONLY the icon; the label stays default text color and
-//     the border stays neutral grey (e.g. a green globe on white "Login").
-// Secondary buttons always render a subtle bordered box at rest (the app's
-// outlined-button look), brightening a touch on hover.
 static bool DrawPopButton(const char* label, ImVec2 size, bool primary, unsigned iconCp = 0,
     const ImVec4* colorOverride = nullptr, const ImVec4* iconTint = nullptr) {
     ImGuiID id = ImGui::GetID(label);
     ImVec2 pos = ImGui::GetCursorScreenPos();
 
-    // BeginDisabled() only lowers style.Alpha; since this button paints itself
-    // through the draw list with hard-coded alpha, detect the reduced alpha and
-    // suppress the hover pop so the disabled state is honest.
     float uiAlpha = ImGui::GetStyle().Alpha;
     bool disabled = uiAlpha < 0.999f;
 
@@ -825,8 +684,6 @@ static bool DrawPopButton(const char* label, ImVec2 size, bool primary, unsigned
         ImVec4 col = hovered ? theme::accentHov : theme::accent;
         dl->AddRectFilled(rmin, rmax, ImGui::ColorConvertFloat4ToU32(fade(col)), 8.0f);
     } else {
-        // Always-on subtle bordered box. A colorOverride tints the fill/border;
-        // otherwise it's a neutral grey outline that lifts a touch on hover.
         ImVec4 fillCol, borderCol;
         if (colorOverride) {
             fillCol = ImVec4(accentColor.x, accentColor.y, accentColor.z, 0.05f + 0.09f * hoverAnim);
@@ -923,18 +780,12 @@ static bool NavItem(const char* label, unsigned iconCp, bool active) {
     ImVec2 pillMax(pos.x + size.x - 8.0f, pos.y + size.y - 6.0f);
     const float rounding = 10.0f;
 
-    // One clean background layer instead of the old glow+fill+border+circle
-    // stack (which doubled up on edges and animated on different curves, so it
-    // read as choppy). Active is a steady soft-accent tint that brightens a
-    // touch on hover; an inactive item just fades in a faint accent wash.
     float fillAlpha = active ? (0.15f + 0.07f * hoverAnim) : (0.075f * hoverAnim);
     if (fillAlpha > 0.004f) {
         ImVec4 fill(theme::accent.x, theme::accent.y, theme::accent.z, fillAlpha);
         dl->AddRectFilled(pillMin, pillMax, ImGui::ColorConvertFloat4ToU32(fill), rounding);
     }
 
-    // Crisp vertically-centred accent bar marks the selected item. It grows in
-    // from zero as the active state settles so switching tabs glides.
     if (anim > 0.001f && active) {
         float barH = (size.y - 22.0f) * anim;
         float cy = pos.y + size.y * 0.5f;
@@ -943,8 +794,6 @@ static bool NavItem(const char* label, unsigned iconCp, bool active) {
         dl->AddRectFilled(barMin, barMax, ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
     }
 
-    // Icon + label share one colour that eases subtext -> text on hover, or sits
-    // on the accent when active. No separate icon disc anymore.
     float colorT = active ? 1.0f : hoverAnim;
     ImVec4 rest = active ? theme::accent : theme::subtext;
     ImVec4 hot = active ? theme::accent : theme::text;
@@ -975,8 +824,6 @@ static void SectionTitle(unsigned iconCp, const char* title, const char* desc) {
     ImGui::TextColored(theme::text, "%s", title);
     ImGui::PopFont();
     ImGui::SetCursorScreenPos(ImVec2(pos.x + 90, pos.y + 42));
-    // Clamp the wrap so the description never runs underneath the top-right
-    // action buttons (e.g. "Open Web" / "Launch Roblox" on the Accounts tab).
     float descX = ImGui::GetCursorScreenPos().x;
     float winRight = ImGui::GetWindowPos().x + ImGui::GetWindowSize().x;
     float wrapX = descX + 480;
@@ -1125,7 +972,6 @@ struct StatusItem {
     ImVec4 iconColor = theme::subtext;
 };
 
-// Bordered card split evenly into columns, each showing an icon + label + value.
 static void StatusCard(std::initializer_list<StatusItem> items) {
     float h = 62.0f;
     ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -1167,9 +1013,6 @@ static void StatusCard(std::initializer_list<StatusItem> items) {
     ImGui::Dummy(ImVec2(0, h));
 }
 
-// ---------------------------------------------------------------------------
-// Multi-Instance dashboard: System Overview / Quick Actions / Performance Monitor
-// ---------------------------------------------------------------------------
 static void DrawStatRow(ImVec2 pos, float width, float rowH, unsigned iconCp, const char* label, const std::string& value, ImVec4 valueColor) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
@@ -1264,7 +1107,7 @@ static bool QuickActionTile(ImVec2 pos, float width, float height, const QuickAc
 
     float anim = std::max(PopAnim(id, hovered, false), 0.0f);
 
-    float lift = pressed ? 0.0f : anim * 3.0f;          // tile rises slightly on hover
+    float lift = pressed ? 0.0f : anim * 3.0f;
     float scale = pressed ? 0.99f : (1.0f + anim * 0.012f);
     ImVec2 center(pos.x + width * 0.5f, pos.y + height * 0.5f - lift);
     ImVec2 half(width * 0.5f * scale, height * 0.5f * scale);
@@ -1273,7 +1116,6 @@ static bool QuickActionTile(ImVec2 pos, float width, float height, const QuickAc
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    // Soft colored glow that blooms in under the tile as it's hovered.
     if (anim > 0.01f) {
         DrawSoftRectGlow(dl, min, max, 10.0f, 16.0f * anim, 0.45f * anim, action.color);
     }
@@ -1288,8 +1130,6 @@ static bool QuickActionTile(ImVec2 pos, float width, float height, const QuickAc
         : theme::border;
     dl->AddRect(min, max, ImGui::ColorConvertFloat4ToU32(borderCol), 10.0f, 0, hovered ? 1.4f : 1.0f);
 
-    // Thin accent bar along the top edge, fading in with hover - ties the
-    // tile's color back to its icon without needing a full colored fill.
     if (anim > 0.01f) {
         dl->AddRectFilled(ImVec2(min.x + 10.0f, min.y), ImVec2(max.x - 10.0f, min.y + 2.2f),
             ImGui::ColorConvertFloat4ToU32(ImVec4(action.color.x, action.color.y, action.color.z, 0.9f * anim)), 2.0f);
@@ -1306,8 +1146,6 @@ static bool QuickActionTile(ImVec2 pos, float width, float height, const QuickAc
     dl->AddText(ImVec2(min.x + 61.0f, min.y + height * 0.5f + 2.0f),
         ImGui::ColorConvertFloat4ToU32(theme::subtext), action.subtitle);
 
-    // Chevron affordance, same language as QuickActionRow, so hover clearly
-    // reads as "this opens something" even on a compact tile.
     std::string chev = icon::Str(icon::CHEVRON_RIGHT);
     ImGui::PushFont(theme::fontIcon);
     ImVec2 chevSize = ImGui::CalcTextSize(chev.c_str());
@@ -1367,14 +1205,11 @@ static void DrawMultiInstanceOverview() {
     float fullW = ImGui::GetContentRegionAvail().x;
     float gap = 16.0f;
     float colW = (fullW - gap) * 0.5f;
-    // Quick Actions' third row ("Open Roblox") used to land flush with the
-    // card's bottom border with zero padding - bumped a bit so it isn't cut off.
     float cardH = 210.0f;
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    // --- System Overview ---
     ImVec2 leftMin = origin;
     ImVec2 leftMax(origin.x + colW, origin.y + cardH);
     dl->AddRectFilled(leftMin, leftMax, ImGui::ColorConvertFloat4ToU32(theme::panelBg), 10.0f);
@@ -1401,7 +1236,6 @@ static void DrawMultiInstanceOverview() {
         DrawMiniBar(ImVec2(p.x, p.y + 158.0f), rowW, mem / 100.0f, memColor);
     }
 
-    // --- Quick Actions ---
     ImVec2 rightMin(origin.x + colW + gap, origin.y);
     ImVec2 rightMax(rightMin.x + colW, origin.y + cardH);
     dl->AddRectFilled(rightMin, rightMax, ImGui::ColorConvertFloat4ToU32(theme::panelBg), 10.0f);
@@ -1454,9 +1288,6 @@ static std::string FitTextToWidth(const std::string& text, float maxWidth) {
     return "...";
 }
 
-// Tooltip styled like the rest of the UI: rounded card, real padding, an accent
-// bar down the left, a bold first line and muted body lines. Pass "\n"-separated
-// text - line 0 is the title.
 static void Tip(const std::string& text) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
@@ -1464,7 +1295,6 @@ static void Tip(const std::string& text) {
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
     ImGui::BeginTooltip();
 
-    // measure first so the panel can be drawn behind the text
     std::vector<std::string> lines;
     {
         size_t start = 0;
@@ -1509,7 +1339,6 @@ static void Tip(const std::string& text) {
     ImGui::PopStyleVar(2);
 }
 
-// 1234 -> "1.2K", 4500000 -> "4.5M" (Roblox-style short counts)
 static std::string CompactCount(long long n) {
     char buf[32];
     if (n >= 1000000000LL)   snprintf(buf, sizeof(buf), "%.1fB", n / 1000000000.0);
@@ -1517,7 +1346,6 @@ static std::string CompactCount(long long n) {
     else if (n >= 1000LL)    snprintf(buf, sizeof(buf), "%.1fK", n / 1000.0);
     else                     snprintf(buf, sizeof(buf), "%lld", n);
     std::string s(buf);
-    // trim a trailing ".0" so we get "4K" rather than "4.0K"
     size_t dot = s.find(".0");
     if (dot != std::string::npos) s.erase(dot, 2);
     return s;
@@ -1606,8 +1434,6 @@ static bool MacActionButton(const char* id, const char* label, MacButtonIcon ico
     return clicked;
 }
 
-// Shows only the adapter currently in use (not the full adapter list) with a
-// monochrome ethernet-port icon, matching the app's black/white/gray theme.
 static void DrawAdapterCard(int& selected) {
     const float cardH = 64.0f;
     ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -1645,8 +1471,6 @@ static void DrawAdapterCard(int& selected) {
 
     float textX = iconPos.x + iconSize + 14.0f;
 
-    // Lay out right-to-left so the pill always hugs the card's right edge
-    // instead of trailing off into empty space on wide cards.
     const char* pillText = "In use";
     ImVec2 pillTextSize = ImGui::CalcTextSize(pillText);
     float pillW = pillTextSize.x + 25.0f;
@@ -1671,8 +1495,6 @@ static void DrawAdapterCard(int& selected) {
         ImGui::ColorConvertFloat4ToU32(theme::text), pillText);
 }
 
-// Small hand-drawn "copy" glyph (two overlapping square outlines) so we don't
-// depend on guessing an unverified codepoint in the subsetted icon font.
 static void DrawCopyGlyph(ImDrawList* dl, ImVec2 topLeft, float size, ImU32 col) {
     float r = size * 0.62f;
     float off = size - r;
@@ -1680,10 +1502,6 @@ static void DrawCopyGlyph(ImDrawList* dl, ImVec2 topLeft, float size, ImU32 col)
     dl->AddRect(ImVec2(topLeft.x + off, topLeft.y), ImVec2(topLeft.x + off + r, topLeft.y + r), col, 2.0f, 0, 1.3f);
 }
 
-// Glassy status overview for the MAC Spoofer page: current MAC / connection /
-// active state as three colored stat cards, plus a usage tip. Mirrors
-// DrawLogCard's translucent-card chrome (soft glow + black glass fill)
-// instead of a flat panel.
 static void DrawMacStatusCard(float height) {
     ImVec2 pos = ImGui::GetCursorScreenPos();
     float w = ImGui::GetContentRegionAvail().x;
@@ -1779,7 +1597,6 @@ static void DrawMacStatusCard(float height) {
         drawStatCell(2, icon::SHIELD_CHECK, colorGreen, "Status", active ? "Active" : "Inactive", false,
             active ? "Adapter is active" : "Adapter is idle");
 
-        // --- Tip callout ---
         float tipY = rowTop + cellH + 16.0f;
         float tipH = 44.0f;
         ImVec2 tipMin(cardPos.x + padX, tipY);
@@ -1811,9 +1628,6 @@ static void DrawMacStatusCard(float height) {
     ImGui::PopStyleVar();
 }
 
-// Status pill shared by every row in the Browser Cookies card: a softly
-// tinted capsule (background + border + a small hand-drawn glyph, all keyed
-// off the same status color) instead of a flat gray box with just a dot.
 enum class CookieGlyph { Good, Warn, Neutral };
 
 static void DrawCookieGlyph(ImDrawList* dl, ImVec2 center, float r, CookieGlyph kind, ImU32 col) {
@@ -1856,8 +1670,6 @@ static void DrawCookieStatusPill(ImVec2 rowPos, float rightEdgeX, float rowH, co
     ImGui::PopFont();
 }
 
-// One entry in the Browser Cookies list: a roblox.com-cookie source (the
-// local cookie file, or one browser's profile) and its current status.
 struct CookieRowInfo {
     unsigned iconCp;
     std::string title;
@@ -1867,9 +1679,6 @@ struct CookieRowInfo {
     CookieGlyph glyph;
 };
 
-// Each source gets its own elevated mini-card (fill + border + a status-
-// colored accent bar down the left edge) instead of a bare row pinned
-// between hairlines - reads as a list of distinct items, not one gray slab.
 static void DrawCookieRow(ImVec2 pos, float width, float rowH, const CookieRowInfo& info) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 cardMax(pos.x + width, pos.y + rowH);
@@ -1913,11 +1722,6 @@ static CookieRowInfo BuildBrowserCookieRowInfo(const char* name, const char* eng
         info.color = theme::warn;
         info.glyph = CookieGlyph::Warn;
     } else if (status->scanFailed) {
-        // The profile's Cookies DB couldn't be located, copied, or queried -
-        // in practice that's almost always because the browser is open right
-        // now with a live roblox.com cookie still in the WAL file we can't
-        // read. Fail closed (assume dirty) rather than show an ambiguous
-        // "Unverified" - check the Logs tab for the specific reason.
         info.pillLabel = "Cookies Found";
         info.color = theme::warn;
         info.glyph = CookieGlyph::Warn;
@@ -1941,9 +1745,6 @@ static CookieRowInfo BuildRobloxFileCookieRowInfo() {
     return info;
 }
 
-// Lists every browser the cookie cleaner supports and whether it currently
-// holds a roblox.com cookie. Backed by backend::browserCookieStatus, which
-// PageCookieCleaner() refreshes (read-only) each time its tab is opened.
 static void DrawBrowserCookieCard(float maxHeight) {
     struct BrowserDef { const char* name; const char* engine; };
     static const BrowserDef kSupportedBrowsers[] = {
@@ -1978,9 +1779,6 @@ static void DrawBrowserCookieCard(float maxHeight) {
 
         DrawCardHeader(ImVec2(cardPos.x + padX, headerY), icon::GLOBE, "Browser Cookies");
 
-        // Manual rescan - the automatic scan only ever runs once, when the tab
-        // is first opened, so a cookie written afterward (e.g. signing in
-        // while this tab is already open) is never picked up without this.
         const float refreshBtnSize = 28.0f;
         float controlsRight = cardPos.x + cardSize.x - padX;
         ImVec2 refreshPos(controlsRight - refreshBtnSize, headerY - 3.0f);
@@ -2006,9 +1804,6 @@ static void DrawBrowserCookieCard(float maxHeight) {
             ImGui::PushFont(theme::fontIcon);
             ImVec2 glyphSize = ImGui::CalcTextSize(refreshGlyph.c_str());
             ImVec2 glyphCenter(refreshPos.x + refreshBtnSize * 0.5f, refreshPos.y + refreshBtnSize * 0.5f);
-            // Pulse the icon's alpha while a scan is in flight, so the button
-            // itself shows work happening, not just the "Scanning..." text
-            // off to the side.
             float iconAlpha = scanningNow
                 ? (0.55f + 0.45f * (0.5f + 0.5f * sinf((float)idlectl::animTime * 6.0f)))
                 : 1.0f;
@@ -2036,10 +1831,6 @@ static void DrawBrowserCookieCard(float maxHeight) {
             if (s.installed && s.scanFailed) anyUnverified = true;
         }
 
-        // Right-aligned status chip: a pulsing dot while scanning, otherwise
-        // a quick "all clean" / "N found" readout so the header itself
-        // answers the question before you read a single row. Anchored off
-        // the refresh button's left edge so the two never overlap.
         float chipAreaRight = refreshPos.x - 10.0f;
         if (scanning) {
             float pulse = 0.4f + 0.6f * (0.5f + 0.5f * sinf((float)idlectl::animTime * 5.0f));
@@ -2099,21 +1890,14 @@ static void DrawBrowserCookieCard(float maxHeight) {
     ImGui::PopStyleVar();
 }
 
-// ---------------------------------------------------------------------------
-// Pages
-// ---------------------------------------------------------------------------
 
-// On-demand elevation. Singleton-handle cleanup and MAC spoofing need admin;
-// instead of forcing UAC at launch we only prompt when one of those features
-// is actually invoked. Returns true if already elevated. Otherwise offers to
-// relaunch elevated and, if accepted, restarts the app (this process exits).
 static bool EnsureElevatedFor(const wchar_t* feature) {
     if (backend::IsElevated()) return true;
     std::wstring msg = std::wstring(feature) +
         L" needs administrator rights.\n\nRestart Vels Multi Tool as administrator now?";
     if (MessageBoxW(nullptr, msg.c_str(), L"Vels Multi Tool", MB_YESNO | MB_ICONWARNING) == IDYES) {
         if (backend::RelaunchAsAdmin()) {
-            backend::Shutdown(); // release mutex/locks so the elevated instance can take over
+            backend::Shutdown();
             ExitProcess(0);
         }
         MessageBoxW(nullptr, L"Could not relaunch as administrator.",
@@ -2212,9 +1996,6 @@ static void PageMacSpoofer() {
     DrawMacStatusCard(ImGui::GetContentRegionAvail().y);
 }
 
-// ---------------------------------------------------------------------------
-// Accounts page helpers: avatar circles + linked-account chips
-// ---------------------------------------------------------------------------
 static void DrawAvatarCircle(ImVec2 pos, float size, ID3D11ShaderResourceView* tex, const std::string& username) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 center(pos.x + size * 0.5f, pos.y + size * 0.5f);
@@ -2247,11 +2028,6 @@ static bool DrawAccountChip(int index, const RobloxAccount& acc, bool isActive, 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 max(liftedPos.x + size.x, liftedPos.y + size.y);
 
-    // Active account keeps a permanent soft glow; hovering any chip blooms
-    // one in too, so selection and hover speak the same visual language.
-    // The chip sits in a horizontally-scrolling strip sized exactly to its
-    // height, so the glow needs an expanded clip rect or it gets hard-cut
-    // top and bottom (the same bug the Community card had).
     float glowAlpha = (isActive ? 0.14f : 0.0f) + 0.30f * anim;
     if (glowAlpha > 0.01f) {
         float glowSpread = 10.0f + 6.0f * anim;
@@ -2365,9 +2141,6 @@ static void PageAccounts(HWND hwnd) {
         }
         ImGui::SetCursorScreenPos(ImVec2(winPos.x + winSize.x - 220.0f, winPos.y + 20.0f));
         ImGui::PushID("quick_launch_top");
-        // Kept clickable even when prerequisites are missing - a disabled ImGui
-        // item can't be hovered or pressed at all, which reads as "the button is
-        // broken". Instead we validate on click and tell the user what's needed.
         if (PrimaryIconButton(icon::PLAY, "Launch Roblox", ImVec2(190.0f, 42.0f))) {
             if (!canQuickLaunch) {
                 backend::Log("[!] Select an account and set a Place ID first, then Launch Roblox.");
@@ -2378,8 +2151,6 @@ static void PageAccounts(HWND hwnd) {
         }
         ImGui::PopID();
 
-        // Open Web: launch a separate browser instance signed into the selected
-        // account. Only needs an account with a cookie - no Place ID required.
         bool canOpenWeb = false;
         {
             std::lock_guard<std::mutex> lock(backend::accountsMutex);
@@ -2419,7 +2190,6 @@ static void PageAccounts(HWND hwnd) {
     std::string selJoinDate, selAccountAge;
     bool selStatsLoaded = false;
 
-    // --- Linked Accounts strip ---
     {
         const float chipW = 190.0f, chipH = 92.0f, gap = 10.0f;
         const float cardH = chipH + 64.0f;
@@ -2466,7 +2236,7 @@ static void PageAccounts(HWND hwnd) {
                             size_t len = std::min(a.alias.size(), sizeof(aliasEditBuf) - 1);
                             memcpy(aliasEditBuf, a.alias.data(), len);
                             aliasEditBuf[len] = '\0';
-                            wantOpenAliasModal = true; // opened below, outside this nested popup's own ID scope
+                            wantOpenAliasModal = true;
                         }
                         if (ImGui::MenuItem("Set Password...")) {
                             contextEditIndex = i;
@@ -2509,10 +2279,8 @@ static void PageAccounts(HWND hwnd) {
                     selJoinDate = a.joinDate; selAccountAge = a.accountAge;
                     selStatsLoaded = a.statsLoaded;
                 }
-            } // accountsMutex released here - safe to open/draw modals below
+            }
 
-            // Opening these here (not inside the context-menu popup above) keeps the ID
-            // resolution consistent with the BeginPopupModal calls right below.
             if (wantOpenAliasModal) { wantOpenAliasModal = false; ImGui::OpenPopup("SetAliasModal"); }
             if (wantOpenPasswordModal) { wantOpenPasswordModal = false; ImGui::OpenPopup("SetPasswordModal"); }
 
@@ -2559,7 +2327,6 @@ static void PageAccounts(HWND hwnd) {
 
     ImGui::Dummy(ImVec2(0, 16));
 
-    // --- Account Overview + Place Configuration ---
     {
         float fullW = ImGui::GetContentRegionAvail().x;
         float gap = 16.0f;
@@ -2568,7 +2335,6 @@ static void PageAccounts(HWND hwnd) {
         ImVec2 origin = ImGui::GetCursorScreenPos();
         ImDrawList* dl = ImGui::GetWindowDrawList();
 
-        // Account Overview (left)
         ImVec2 leftMin = origin, leftMax(origin.x + colW, origin.y + cardH);
         dl->AddRectFilled(leftMin, leftMax, ImGui::ColorConvertFloat4ToU32(theme::panelBg), 10.0f);
         dl->AddRect(leftMin, leftMax, ImGui::ColorConvertFloat4ToU32(theme::border), 10.0f, 0, 1.0f);
@@ -2634,7 +2400,6 @@ static void PageAccounts(HWND hwnd) {
             }
         }
 
-        // Place Configuration (right)
         ImVec2 rightMin(origin.x + colW + gap, origin.y), rightMax(rightMin.x + colW, origin.y + cardH);
         dl->AddRectFilled(rightMin, rightMax, ImGui::ColorConvertFloat4ToU32(theme::panelBg), 10.0f);
         dl->AddRect(rightMin, rightMax, ImGui::ColorConvertFloat4ToU32(theme::border), 10.0f, 0, 1.0f);
@@ -2674,7 +2439,7 @@ static void PageAccounts(HWND hwnd) {
                 }
                 placeLoaded = backend::placeInfo.placeId == currentPlaceId && backend::placeInfo.loaded;
                 if (placeLoaded) info = backend::placeInfo;
-            } // lock released before any texture work below
+            }
 
             auto fmtCount = [](long long v) -> std::string {
                 if (v < 0) return "-";
@@ -2738,8 +2503,6 @@ static void PageAccounts(HWND hwnd) {
             float actionY = rightMax.y - 62.0f;
             ImGui::SetCursorScreenPos(ImVec2(p.x, actionY));
             bool canLaunch = hasSelectedAccount && currentPlaceId > 0;
-            // Always hoverable/clickable (see note on the top buttons); validate
-            // on click rather than disabling, which would kill hover entirely.
             if (PrimaryIconButton(icon::PLAY, "Launch Roblox", ImVec2(actionW, 42))) {
                 if (!canLaunch) {
                     backend::Log("[!] Select an account and set a Place ID first, then Launch Roblox.");
@@ -2767,11 +2530,7 @@ static void PageAccounts(HWND hwnd) {
     }
 }
 
-// ===========================================================================
-// Redesigned single-screen "Account Manager" (Volt-style layout)
-// ===========================================================================
 
-// Pill toggle switch. Returns true on the frame it was flipped.
 static bool ToggleSwitch(const char* id, bool* v) {
     ImVec2 sz(46, 26);
     ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -2782,7 +2541,6 @@ static bool ToggleSwitch(const char* id, bool* v) {
     float target = *v ? 1.0f : 0.0f;
     anim += (target - anim) * std::min(1.0f, ImGui::GetIO().DeltaTime * 16.0f);
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    // red when off, green when on - the state should read at a glance
     ImVec4 off = theme::bad, on = theme::good;
     ImVec4 track(off.x + (on.x - off.x) * anim, off.y + (on.y - off.y) * anim,
                  off.z + (on.z - off.z) * anim, 1.0f);
@@ -2795,7 +2553,6 @@ static bool ToggleSwitch(const char* id, bool* v) {
     return clicked;
 }
 
-// Segmented control (e.g. None / Round-robin / Assigned). Returns the chosen index.
 static int SegmentedControl(const char* id, const char* const* opts, int count, int idx, ImVec2 size) {
     ImVec2 pos = ImGui::GetCursorScreenPos();
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -2826,7 +2583,6 @@ static int SegmentedControl(const char* id, const char* const* opts, int count, 
     return result;
 }
 
-// Small label + value stat used in card headers.
 static void DrawLabelValue(ImVec2 pos, const char* label, const std::string& value, ImVec4 valColor) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddText(pos, ImGui::ColorConvertFloat4ToU32(theme::subtext), label);
@@ -2836,7 +2592,6 @@ static void DrawLabelValue(ImVec2 pos, const char* label, const std::string& val
     ImGui::PopFont();
 }
 
-// Native open-file dialog for bulk cookie import. Returns L"" if cancelled.
 static std::wstring OpenCookieFileDialog(HWND owner) {
     wchar_t file[2048] = L"";
     OPENFILENAMEW ofn = {};
@@ -2850,7 +2605,6 @@ static std::wstring OpenCookieFileDialog(HWND owner) {
     return L"";
 }
 
-// Imports .ROBLOSECURITY cookies from a file, one per line. Runs on a worker thread.
 static void ImportCookiesFromFile(const std::wstring& path) {
     std::thread([path]() {
         FILE* f = _wfopen(path.c_str(), L"rb");
@@ -2865,16 +2619,14 @@ static void ImportCookiesFromFile(const std::wstring& path) {
             size_t nl = data.find('\n', start);
             std::string line = data.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
             start = (nl == std::string::npos) ? data.size() + 1 : nl + 1;
-            // trim whitespace/CR
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.pop_back();
             size_t b = line.find_first_not_of(" \t");
             if (b == std::string::npos) continue;
             line = line.substr(b);
             if (line.empty()) continue;
-            // strip an optional ".ROBLOSECURITY=" prefix
             const std::string pfx = ".ROBLOSECURITY=";
             if (line.rfind(pfx, 0) == 0) line = line.substr(pfx.size());
-            if (line.size() < 40) continue; // not a plausible cookie
+            if (line.size() < 40) continue;
             tried++;
             if (backend::AddAccountFromCookie(line)) added++;
         }
@@ -2882,15 +2634,13 @@ static void ImportCookiesFromFile(const std::wstring& path) {
     }).detach();
 }
 
-// The redesigned main screen. `gotoMultiInstance` is set true when the user
-// clicks the top-right "Multi Instance" button so the caller can switch views.
 static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
-    (void)gotoMultiInstance; // Multi Instance is now a live toggle - it no longer switches pages
+    (void)gotoMultiInstance;
     static char placeIdBuf[32] = "";
     static bool placeIdInit = false;
-    static char psLinkBuf[512] = "";   // pasted private server link
-    static char psNameBuf[64] = "";    // name for the "save private server" footer
-    static char verHashBuf[64] = "";   // version hash to downgrade to
+    static char psLinkBuf[512] = "";
+    static char psNameBuf[64] = "";
+    static char verHashBuf[64] = "";
     static std::set<int> selectedAccts;
     static std::atomic<bool> loginInProgress{ false };
     static bool wantPasteModal = false;
@@ -2902,24 +2652,19 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         placeIdInit = true;
     }
 
-    // Explicit outer margin so the cards sit clearly inset from the window
-    // edges (the parent child-window padding proved unreliable, so drive it
-    // here). MARGIN = left/right gutter; TOPMARGIN = gap below the titlebar.
     const float MARGIN = 30.0f;
     const float TOPMARGIN = 14.0f;
     const ImVec2 availTL = ImGui::GetCursorScreenPos();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float W = avail.x - MARGIN * 2.0f;
-    // bottom gutter, plus room for the credits footer drawn by the root window
     const float bottomY = availTL.y + avail.y - MARGIN - 16.0f;
     const float padX = 20.0f;
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    // ----- palette -----
-    const ImVec4 cGreen = theme::good;                       // launch / connected
-    const ImVec4 cRed   = theme::bad;                        // destructive
-    const ImVec4 cGold  = theme::warn;                       // paste cookies
-    const ImVec4 cBlue  = ImVec4(0.36f, 0.62f, 0.98f, 1.0f); // load from file
+    const ImVec4 cGreen = theme::good;
+    const ImVec4 cRed   = theme::bad;
+    const ImVec4 cGold  = theme::warn;
+    const ImVec4 cBlue  = ImVec4(0.36f, 0.62f, 0.98f, 1.0f);
     const ImU32 cardBgU     = ImGui::ColorConvertFloat4ToU32(ImVec4(0.093f, 0.098f, 0.109f, 1.0f));
     const ImU32 cardBorderU = ImGui::ColorConvertFloat4ToU32(ImVec4(0.225f, 0.235f, 0.255f, 1.0f));
     const ImU32 subU        = ImGui::ColorConvertFloat4ToU32(theme::subtext);
@@ -2927,12 +2672,10 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
     const ImU32 borderU     = ImGui::ColorConvertFloat4ToU32(theme::border);
     const float cardRound = 12.0f;
 
-    // rounded, thin-bordered card panel
     auto card = [&](float x, float y, float w, float h) {
         dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), cardBgU, cardRound);
         dl->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), cardBorderU, cardRound, 0, 1.0f);
     };
-    // dashed edges (axis-aligned) for the "no place configured" placeholder
     auto dashH = [&](float x0, float x1, float yy, ImU32 col, float d, float g, float th) {
         for (float t = x0; t < x1; t += d + g) dl->AddLine(ImVec2(t, yy), ImVec2(std::min(t + d, x1), yy), col, th);
     };
@@ -2940,7 +2683,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         for (float t = y0; t < y1; t += d + g) dl->AddLine(ImVec2(xx, t), ImVec2(xx, std::min(t + d, y1)), col, th);
     };
 
-    // ----- account snapshot (for header stats + table) -----
     int acctCount = 0;
     struct RowInfo { std::string name; long long userId; };
     std::vector<RowInfo> rows;
@@ -2954,9 +2696,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
 
     const float baseX = availTL.x + MARGIN, baseY = availTL.y + TOPMARGIN;
 
-    // =====================================================================
-    // Header: icon badge + title + stats  (left) | button group (right)
-    // =====================================================================
     float headY = baseY + 6.0f;
     IconBox(ImVec2(baseX, headY), 48.0f, icon::USER, theme::softAccentBg, theme::accent, 12.0f);
     ImGui::PushFont(theme::fontTitle);
@@ -2970,9 +2709,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         dl->AddText(ImVec2(baseX + 62.0f, headY + 29.0f), subU, stats);
     }
     {
-        // The Multi Instance button is a live toggle: ON tints it green and, while
-        // active, the backend watcher holds the singleton mutex and closes any
-        // ROBLOX_singletonEvent handles so extra clients can launch. No page switch.
         bool multiOn = backend::watching.load();
         struct HBtn { const char* label; unsigned icon; int id; const ImVec4* tint; };
         HBtn btns[] = {
@@ -3004,16 +2740,11 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             ImGui::PopID();
             if (clicked) {
                 if (b.id == 0) {
-                    // Toggle multi-instance in place - no new section. Turning it on
-                    // starts the watcher (holds the singleton mutex + closes the
-                    // singleton event); turning it off stops it.
                     if (backend::watching.load()) backend::StopWatching();
                     else if (EnsureElevatedFor(L"Closing Roblox singleton handles")) backend::StartWatching();
                 }
                 else if (b.id == 1) std::thread([]() { backend::KillAllRobloxInstances(); }).detach();
                 else if (b.id == 2) {
-                    // An active private server overrides the place ID field - its
-                    // own place is the one the link belongs to.
                     backend::PrivateServer aps;
                     { std::lock_guard<std::mutex> lock(backend::activePrivateServerMutex); aps = backend::activePrivateServer; }
                     long long pid = aps.linkCode.empty() ? backend::savedPlaceId.load() : aps.placeId;
@@ -3032,18 +2763,12 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         }
     }
 
-    // =====================================================================
-    // Row 1: Add Accounts (left)  |  Launch Settings (right)
-    // =====================================================================
     const float row1Y = baseY + 68.0f;
     const float cardGap = 16.0f;
     const float cardW = (W - cardGap) * 0.5f;
-    // Both row-1 cards share one height: Launch Settings needs the room for its
-    // private-server section, and Add Accounts fills the rest with a status panel.
     const float card1H = 306.0f;
     const float launchH = card1H;
 
-    // ----- Add Accounts -----
     {
         float cx = baseX, cy = row1Y, cw = cardW;
         card(cx, cy, cw, card1H);
@@ -3088,11 +2813,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             x += w + gap;
         }
 
-        // ----- Roblox version (downgrader / force live) -----
-        // Live + next version come from WEAO (weao.xyz/api/versions); builds are
-        // pulled straight off Roblox's deployment CDN, the same way rdd.weao.gg
-        // does it, into Builds\<hash> next to the exe. The active build is what
-        // every launch runs, so pinning an old hash = a permanent downgrade.
         {
             backend::RobloxBuildState bs;
             std::vector<std::string> builds;
@@ -3104,9 +2824,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             static bool weaoKicked = false;
             if (!weaoKicked) { weaoKicked = true; std::thread([]() { backend::FetchWeaoVersions(); }).detach(); }
 
-            // The worker finishing is not an input event, so without this the
-            // last busy frame (a half-full bar) would stay on screen until the
-            // user happened to move the mouse.
             static bool lastBusy = false;
             if (bs.busy != lastBusy) { lastBusy = bs.busy; idlectl::RequestFrames(4); }
 
@@ -3120,7 +2837,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             ImGui::PopFont();
             dl->AddText(ImVec2(cx + padX + sgw + 8.0f, sy + 14.0f), subU, "Roblox Version");
 
-            // right side of the header: the live hash from WEAO
             {
                 std::string live = bs.weaoLoaded ? bs.liveVersion : "checking live...";
                 ImVec2 ls = ImGui::CalcTextSize(live.c_str());
@@ -3142,7 +2858,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     ImGui::ColorConvertFloat4ToU32(rh ? theme::accent : theme::subtext), live.c_str());
             }
 
-            // Download Latest / Download Previous
             float fh = 34.0f;
             {
                 float half = (cw - padX * 2.0f - 8.0f) * 0.5f;
@@ -3169,7 +2884,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                           (bs.pastDate.empty() ? "" : "\n" + bs.pastDate));
             }
 
-            // hash field + Downgrade
             float fy = sy + 40.0f + fh + 8.0f;
             float fullW = cw - padX * 2.0f;
             float dgW = 96.0f, inW3 = fullW - dgW - 8.0f;
@@ -3203,12 +2917,8 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 }
             }
 
-            // progress line while a build is downloading, otherwise Force Live +
-            // the list of builds already on disk
             float py = fy + fh + 8.0f;
             if (bs.busy) {
-                // status line first, bar under it - both inside the row so the
-                // text can't spill past the bottom of the card
                 float pct = std::min(1.0f, std::max(0.0f, bs.progress));
                 char pctBuf[16]; snprintf(pctBuf, sizeof(pctBuf), "%d%%", (int)(pct * 100.0f + 0.5f));
                 ImVec2 ps2 = ImGui::CalcTextSize(pctBuf);
@@ -3222,15 +2932,11 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 dl->AddRectFilled(bmin, ImVec2(bmin.x + (bmax.x - bmin.x) * pct, bmax.y),
                     ImGui::ColorConvertFloat4ToU32(theme::accent), 3.0f);
 
-                // a download runs on a worker thread, so keep repainting even
-                // though the user isn't touching anything
                 idlectl::RequestFrames(2);
             } else if (builds.empty()) {
                 dl->AddText(ImVec2(cx + padX, py + (fh - ImGui::GetFontSize()) * 0.5f), subU,
                     "No client downloaded yet");
             } else {
-                // One switch: off = the system-installed Roblox, on = the build
-                // we downloaded. Toggling off remembers which build to come back to.
                 bool on = !bs.activeVersion.empty();
                 ImGui::SetCursorScreenPos(ImVec2(cx + padX, py + (fh - 26.0f) * 0.5f));
                 bool wasOn = on;
@@ -3249,7 +2955,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 std::string shown = on ? bs.activeVersion
                     : (bs.preferredVersion.empty() ? builds.back() : bs.preferredVersion);
 
-                // "Remove" on the right frees the downloaded client again
                 float remW = ImGui::CalcTextSize("Remove").x;
                 float remX = cx + cw - padX - remW;
                 ImGui::SetCursorScreenPos(ImVec2(remX - 6.0f, py + 6.0f));
@@ -3272,7 +2977,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         }
     }
 
-    // ----- Launch Settings -----
     {
         float cx = baseX + cardW + cardGap, cy = row1Y, cw = cardW;
         card(cx, cy, cw, launchH);
@@ -3280,13 +2984,9 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         dl->AddText(ImVec2(cx + padX, cy + 20), textU, "Launch Settings");
         ImGui::PopFont();
 
-        // the preview corner needs the wider share now that it carries stats
         float leftW = cw * 0.44f;
         dl->AddText(ImVec2(cx + padX, cy + 52), subU, "Place ID");
 
-        // Custom Place ID field: rounded inset box with a leading cube icon,
-        // a divider, and an accent border + soft glow while focused. The real
-        // ImGui field is drawn with a transparent frame on top of our box.
         {
             float ibx0 = cx + padX, iby0 = cy + 72.0f;
             float ibw = leftW - padX - 6.0f, ibh = 40.0f;
@@ -3328,25 +3028,17 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                                   : ImVec4(0.225f, 0.235f, 0.255f, 1.0f);
             dl->AddRect(imn, imx, ImGui::ColorConvertFloat4ToU32(bcol), 9.0f, 0, 1.4f);
         }
-        // ----- Saved-places dropdown (fully custom, animated) -----
-        // Header sits under the Place ID field. Clicking it opens a floating panel
-        // (rendered as a borderless popup so it layers above the cards and closes
-        // on outside-click) whose height eases open and whose rows have their own
-        // hover/press animation. Picking a row fills the field + saves it; the
-        // footer lets you name-and-save the ID currently in the field.
         {
             long long curId = _atoi64(placeIdBuf);
             float ddx = cx + padX, ddy = cy + 120.0f;
             float ddw = leftW - padX - 6.0f, ddh = 34.0f;
             ImVec2 dmn(ddx, ddy), dmx(ddx + ddw, ddy + ddh);
 
-            // snapshot the saved list once (used for both sizing and drawing)
             std::vector<backend::SavedPlace> snapshot;
             { std::lock_guard<std::mutex> lock(backend::savedPlacesMutex); snapshot = backend::savedPlaces; }
 
             bool popupOpen = ImGui::IsPopupOpen("places_popup");
 
-            // --- header ---
             ImGui::SetCursorScreenPos(dmn);
             ImGui::InvisibleButton("##places_dd", ImVec2(ddw, ddh));
             bool hdrHover = ImGui::IsItemHovered();
@@ -3365,7 +3057,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 : ImVec4(0.225f, 0.235f, 0.255f, 1.0f);
             dl->AddRect(dmn, dmx, ImGui::ColorConvertFloat4ToU32(hdrBorder), 8.0f, 0, 1.3f);
 
-            // current-selection label
             std::string curLabel;
             for (auto& p : snapshot) if (p.id == curId) { curLabel = p.name; break; }
             bool isHint = curLabel.empty();
@@ -3373,12 +3064,11 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             dl->AddText(ImVec2(ddx + 12.0f, ddy + (ddh - ImGui::GetFontSize()) * 0.5f),
                 isHint ? subU : textU, curLabel.c_str());
 
-            // chevron: eases from pointing-down (closed) to pointing-up (open)
             static float chevT = 0.0f;
             chevT += ((popupOpen ? 1.0f : 0.0f) - chevT) * std::min(1.0f, ImGui::GetIO().DeltaTime * 14.0f);
             {
                 float cxp = dmx.x - 16.0f, cyp = ddy + ddh * 0.5f;
-                float ang = 3.14159265f * chevT;              // 0 -> down, PI -> up
+                float ang = 3.14159265f * chevT;
                 float ca = cosf(ang), sa = sinf(ang);
                 auto rot = [&](float rx, float ry) {
                     return ImVec2(cxp + (rx * ca - ry * sa), cyp + (rx * sa + ry * ca));
@@ -3388,26 +3078,23 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 dl->AddTriangleFilled(rot(-4.0f, -2.2f), rot(4.0f, -2.2f), rot(0.0f, 3.0f), chevU);
             }
 
-            // --- floating panel ---
             static float ddAnim = 0.0f;
             ddAnim += ((popupOpen ? 1.0f : 0.0f) - ddAnim) * std::min(1.0f, ImGui::GetIO().DeltaTime * 16.0f);
             if (ddAnim < 0.001f) ddAnim = 0.0f;
 
             const float rowH = 36.0f;
             const int   rowN = (int)snapshot.size();
-            const float footerH = 8.0f + 18.0f + 8.0f + 32.0f + 12.0f; // label + gap + input row + pad
+            const float footerH = 8.0f + 18.0f + 8.0f + 32.0f + 12.0f;
             const float fullH = 8.0f + rowN * rowH + 10.0f + 1.0f + footerH;
-            float eased = ddAnim * ddAnim * (3.0f - 2.0f * ddAnim); // smoothstep
+            float eased = ddAnim * ddAnim * (3.0f - 2.0f * ddAnim);
 
-            // The panel is free to be wider than the header it drops out of, so
-            // preset names get shown in full rather than ellipsized to fit.
             float pw = ddw;
             for (const auto& p : snapshot) {
                 float need = 12.0f + ImGui::CalcTextSize(p.name.empty() ? "(unnamed)" : p.name.c_str()).x
                            + 14.0f + ImGui::CalcTextSize(std::to_string(p.id).c_str()).x + 41.0f;
                 pw = std::max(pw, need);
             }
-            pw = std::min(pw, cw - padX * 2.0f); // never wider than the card
+            pw = std::min(pw, cw - padX * 2.0f);
 
             ImGui::SetNextWindowPos(ImVec2(ddx, ddy + ddh + 6.0f));
             ImGui::SetNextWindowSize(ImVec2(pw, fullH * eased));
@@ -3422,18 +3109,15 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 ImVec2 wp = ImGui::GetWindowPos();
                 ImVec2 pmin = wp, pmax = ImVec2(wp.x + pw, wp.y + fullH);
 
-                // panel background + border (clipped to the animated window height)
                 pdl->AddRectFilled(pmin, pmax, ImGui::ColorConvertFloat4ToU32(ImVec4(0.115f, 0.120f, 0.132f, 1.0f)), 10.0f);
                 pdl->AddRect(pmin, pmax, ImGui::ColorConvertFloat4ToU32(ImVec4(0.20f, 0.21f, 0.24f, 1.0f)), 10.0f, 0, 1.2f);
 
-                // rows
                 for (int i = 0; i < rowN; ++i) {
                     const backend::SavedPlace& p = snapshot[i];
                     float ry = wp.y + 8.0f + i * rowH;
                     char rid[32]; snprintf(rid, sizeof(rid), "##ddrow%d", i);
                     char did[32]; snprintf(did, sizeof(did), "##dddel%d", i);
 
-                    // select hit-box (leaves 30px on the right for delete)
                     ImGui::SetCursorScreenPos(ImVec2(wp.x + 5.0f, ry));
                     ImGui::InvisibleButton(rid, ImVec2(pw - 10.0f - 30.0f, rowH - 4.0f));
                     bool selHov = ImGui::IsItemHovered();
@@ -3442,7 +3126,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     float ra = PopAnim(ImGui::GetID(rid), selHov, selHeld);
                     float rHov = std::max(ra, 0.0f);
 
-                    // delete hit-box (right 30px)
                     ImGui::SetCursorScreenPos(ImVec2(wp.x + pw - 5.0f - 28.0f, ry + 2.0f));
                     ImGui::InvisibleButton(did, ImVec2(28.0f, rowH - 8.0f));
                     bool delHov = ImGui::IsItemHovered();
@@ -3451,37 +3134,31 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     bool selected = (p.id == curId);
                     ImVec2 rmin(wp.x + 5.0f, ry), rmax(wp.x + pw - 5.0f, ry + rowH - 4.0f);
 
-                    // hover / selected highlight
                     if (rHov > 0.01f || selected || delHov) {
                         float fa = selected ? 0.16f : (0.05f + 0.11f * std::max(rHov, delHov ? 1.0f : 0.0f));
                         pdl->AddRectFilled(rmin, rmax,
                             ImGui::ColorConvertFloat4ToU32(ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, fa)), 7.0f);
                     }
-                    if (selected) // left accent stripe
+                    if (selected)
                         pdl->AddRectFilled(ImVec2(rmin.x, rmin.y + 6.0f), ImVec2(rmin.x + 3.0f, rmax.y - 6.0f),
                             ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
 
-                    // name (left) + place id (right)
                     ImVec4 nameCol = (selected || rHov > 0.01f) ? theme::text
                         : ImVec4(theme::text.x, theme::text.y, theme::text.z, 0.82f);
                     std::string ids = std::to_string(p.id);
                     ImVec2 idsz = ImGui::CalcTextSize(ids.c_str());
                     float idRight = wp.x + pw - 5.0f - 30.0f;
 
-                    // clamp the name to whatever the id leaves free so the two
-                    // never draw over each other on long names / long ids
                     std::string nm = p.name.empty() ? std::string("(unnamed)") : p.name;
                     float nameX = rmin.x + 12.0f;
                     float nameW = (idRight - idsz.x - 12.0f) - nameX;
                     pdl->AddText(ImVec2(nameX, ry + (rowH - 4.0f - ImGui::GetFontSize()) * 0.5f),
                         ImGui::ColorConvertFloat4ToU32(nameCol), FitTextToWidth(nm, nameW).c_str());
-                    // fade the id out to make room for the delete glyph on hover
                     float idAlpha = (selHov || delHov) ? 0.0f : 0.55f;
                     if (idAlpha > 0.01f)
                         pdl->AddText(ImVec2(idRight - idsz.x - 6.0f, ry + (rowH - 4.0f - idsz.y) * 0.5f),
                             ImGui::ColorConvertFloat4ToU32(ImVec4(theme::subtext.x, theme::subtext.y, theme::subtext.z, idAlpha)), ids.c_str());
 
-                    // delete glyph (a small x) shown while hovering the row/delete
                     if (selHov || delHov) {
                         float dcx = wp.x + pw - 5.0f - 15.0f, dcy = ry + (rowH - 4.0f) * 0.5f;
                         ImVec4 xcol = delHov ? theme::bad : ImVec4(theme::subtext.x, theme::subtext.y, theme::subtext.z, 0.85f);
@@ -3506,12 +3183,10 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     }
                 }
 
-                // separator
                 float sy = wp.y + 8.0f + rowN * rowH + 8.0f;
                 pdl->AddLine(ImVec2(wp.x + 10.0f, sy), ImVec2(wp.x + pw - 10.0f, sy),
                     ImGui::ColorConvertFloat4ToU32(theme::border), 1.0f);
 
-                // footer: name field + Save button for the current Place ID
                 float fy = sy + 10.0f;
                 pdl->AddText(ImVec2(wp.x + 12.0f, fy), subU, "Save current Place ID");
                 fy += 20.0f;
@@ -3552,14 +3227,7 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             ImGui::PopStyleVar(2);
         }
 
-        // ----- Private server -----
-        // Paste a share link (roblox.com/share?code=...&type=Server) or a
-        // ?privateServerLinkCode= URL and hit Use: the code is resolved through
-        // Roblox's share-link API and becomes the target every launch joins,
-        // until it's cleared. The dropdown below stores named presets.
         {
-            // Full-width section under a divider, so the link field gets room to
-            // show an actual URL instead of being squeezed into the left column.
             float secY = cy + 172.0f;
             dl->AddLine(ImVec2(cx + padX, secY), ImVec2(cx + cw - padX, secY), borderU, 1.0f);
 
@@ -3576,7 +3244,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             { std::lock_guard<std::mutex> lock(backend::activePrivateServerMutex); active = backend::activePrivateServer; }
             bool resolving = backend::privateServerResolving.load();
 
-            // link field + Use button
             float useW = 62.0f, inW2 = psw - useW - 8.0f;
             float iy = psy + 22.0f, ih = 34.0f;
             ImVec2 imn(psx, iy), imx(psx + inW2, iy + ih);
@@ -3616,10 +3283,7 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 }).detach();
             }
 
-            // saved private servers dropdown (same behaviour as the places one)
             {
-                // dropdown takes the left half of the row; the status chip sits
-                // in the right half so the card ends on a clear state readout.
                 float ddx = psx, ddy = iy + ih + 10.0f, ddw = psw * 0.5f - 6.0f, ddh = 34.0f;
                 ImVec2 dmn(ddx, ddy), dmx(ddx + ddw, ddy + ddh);
 
@@ -3640,8 +3304,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     ? ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.45f + 0.4f * hHov)
                     : ImVec4(0.225f, 0.235f, 0.255f, 1.0f)), 8.0f, 0, 1.3f);
 
-                // the active server's saved name (if any) is shown in the chip to
-                // the right, so the header stays a plain picker label
                 std::string activeName;
                 for (auto& p : snap) if (p.linkCode == active.linkCode && !active.linkCode.empty()) { activeName = p.name; break; }
                 dl->AddText(ImVec2(ddx + 12.0f, ddy + (ddh - ImGui::GetFontSize()) * 0.5f), subU, "Saved private servers");
@@ -3653,7 +3315,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     dl->AddTriangleFilled(rot(-4.0f, -2.2f), rot(4.0f, -2.2f), rot(0.0f, 3.0f), subU);
                 }
 
-                // --- status chip (right half of the row) ---
                 {
                     bool on = !active.linkCode.empty();
                     float chx = psx + psw * 0.5f + 6.0f, chw = psw * 0.5f - 6.0f;
@@ -3669,7 +3330,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     if (on) dl->AddCircleFilled(ImVec2(chx + 14.0f, dotY), 7.5f,
                         ImGui::ColorConvertFloat4ToU32(ImVec4(tone.x, tone.y, tone.z, 0.20f)));
 
-                    // clear button on the right edge of the chip, only when active
                     float textRight = cmx.x - 12.0f;
                     if (on) {
                         float bxc = cmx.x - 16.0f;
@@ -3706,8 +3366,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 if (psAnim < 0.001f) psAnim = 0.0f;
                 float eased = psAnim * psAnim * (3.0f - 2.0f * psAnim);
 
-                // same as the places panel: widen past the header so saved names
-                // are never cut short
                 float ppw = ddw;
                 for (const auto& p : snap) {
                     float need = 12.0f + ImGui::CalcTextSize(p.name.empty() ? "(unnamed)" : p.name.c_str()).x
@@ -3848,7 +3506,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             }
         }
 
-        // resolved-name / dashed placeholder box on the right
         std::string placeName; bool loaded = false;
         std::vector<unsigned char> iconPng; long long infoPlaceId = 0;
         long long curPlaceId = _atoi64(placeIdBuf);
@@ -3856,8 +3513,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
           if (backend::placeInfo.loaded && backend::placeInfo.placeId == curPlaceId && curPlaceId > 0) {
               placeName = backend::placeInfo.name; loaded = true;
               iconPng = backend::placeInfo.iconPng; infoPlaceId = backend::placeInfo.placeId; } }
-        // A place restored from placeid.dat has never been fetched, so pull its
-        // details once instead of sitting on the empty state until it's retyped.
         if (!loaded && curPlaceId > 0) {
             static long long lastAutoFetch = 0;
             if (lastAutoFetch != curPlaceId) {
@@ -3869,11 +3524,7 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
             }
         }
         float bxL = cx + leftW + 6.0f, bxR = cx + cw - padX;
-        // preview box only spans the Place ID half of the card - the private
-        // server section below runs the full width under its own divider
         float byT = cy + 50.0f, byB = cy + 156.0f;
-        // Square thumbnail filling the left of the preview corner, with the game
-        // name and its live stats stacked beside it. No frame - the art carries it.
         long long playing = -1, visits = -1, favorites = -1;
         std::string creator;
         { std::lock_guard<std::mutex> lock(backend::placeInfoMutex);
@@ -3884,8 +3535,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         ImVec2 tp(bxL, byT + 8.0f), tpMax(tp.x + thumb, tp.y + thumb);
         float infoX = tpMax.x + 12.0f;
         if (loaded) {
-            // Show the real game thumbnail if we have it decoded; otherwise fall
-            // back to the generic file glyph until FetchPlaceInfo delivers the icon.
             ID3D11ShaderResourceView* iconTex = GetOrCreatePlaceIconTexture(infoPlaceId, iconPng);
             if (iconTex) {
                 dl->AddImageRounded(iconTex, tp, tpMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 14.0f);
@@ -3903,7 +3552,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 dl->AddText(ImVec2(infoX, tp.y + 21.0f), subU,
                     FitTextToWidth("by " + creator, infoW).c_str());
 
-            // live player count leads, then lifetime visits + favourites
             float statY = tp.y + 42.0f;
             if (playing >= 0) {
                 dl->AddCircleFilled(ImVec2(infoX + 4.0f, statY + 7.0f), 3.4f,
@@ -3922,7 +3570,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 dl->AddText(ImVec2(infoX, statY + 19.0f), subU,
                     FitTextToWidth(CompactCount(favorites) + " favourites", infoW).c_str());
         } else {
-            // soft filled tile - no dashes, no hard border
             dl->AddRectFilled(tp, tpMax, ImGui::ColorConvertFloat4ToU32(
                 ImVec4(0.132f, 0.138f, 0.150f, 1.0f)), 14.0f);
             ImGui::PushFont(theme::fontIcon);
@@ -3940,19 +3587,10 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         }
     }
 
-    // =====================================================================
-    // Row 2: Accounts card (fills remaining height)
-    // =====================================================================
     const float row2Y = row1Y + std::max(card1H, launchH) + 16.0f;
-    // The card hugs its rows instead of always stretching to the window bottom -
-    // header band (92px) + 40px a row + a little breathing room, clamped to what
-    // is actually on screen. The empty state needs more room for its centred art.
-    // Fixed for the empty state - deriving it from the window height would feed
-    // back into the auto-resize below and make the window creep.
     const float accountsH = rows.empty()
         ? 320.0f
         : std::max(200.0f, 106.0f + (float)rows.size() * 40.0f);
-    // What the window should be so the layout ends just under this card.
     g_desiredClientH = row2Y + accountsH + MARGIN + 16.0f;
     {
         float cx = baseX, cy = row2Y, cw = W;
@@ -3962,7 +3600,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         dl->AddText(ImVec2(cx + padX + 36, cy + 19), textU, "Accounts");
         ImGui::PopFont();
 
-        // right-side controls: [0 connected] [N processes] [Launch Browser] [Check] [⋮] [Delete]
         float bx = cx + cw - padX;
         const float delW = 84, menuW = 34, chkW = 90, webW = 140, gap = 8;
         bx -= delW; ImGui::SetCursorScreenPos(ImVec2(bx, cy + 14));
@@ -4006,7 +3643,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         ImVec2 cs = ImGui::CalcTextSize(cc); metaX -= cs.x + 16;
         dl->AddText(ImVec2(metaX, cy + 20), ImGui::ColorConvertFloat4ToU32(theme::good), cc);
 
-        // column header
         float tableTop = cy + 58.0f;
         dl->AddLine(ImVec2(cx + 12, tableTop - 6), ImVec2(cx + cw - 12, tableTop - 6), borderU, 1.0f);
         float colChk     = cx + padX + 2;
@@ -4017,11 +3653,8 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         float colPs      = cx + cw * 0.70f;
         float colStat    = cx + cw * 0.82f;
         float colAct     = cx + cw * 0.90f;
-        // header content vertically centered between the two divider lines
-        // (top at tableTop-6, bottom at tableTop+26 -> band center tableTop+10)
-        const float hdrY = tableTop + 3.0f;      // text top (center ~ band center)
-        const float cbcY = tableTop + 10.0f;     // checkbox center = band center
-        // select-all checkbox
+        const float hdrY = tableTop + 3.0f;
+        const float cbcY = tableTop + 10.0f;
         {
             bool allSel = !rows.empty() && (int)selectedAccts.size() == (int)rows.size();
             ImGui::SetCursorScreenPos(ImVec2(colChk, cbcY - 8.0f));
@@ -4049,7 +3682,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         dl->AddLine(ImVec2(cx + 12, tableTop + 26), ImVec2(cx + cw - 12, tableTop + 26), borderU, 1.0f);
 
         if (rows.empty()) {
-            // empty state, centered in the space below the column header
             float regionTop = tableTop + 26.0f;
             float ecy = (regionTop + (cy + accountsH)) * 0.5f;
             float centerX = cx + cw * 0.5f;
@@ -4082,8 +3714,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 if (!path.empty()) ImportCookiesFromFile(path);
             }
         } else {
-            // Every row shares the one active private-server target, so resolve
-            // its label once instead of per row.
             std::string rowPsCode, rowPsLabel = "None";
             {
                 backend::PrivateServer aps;
@@ -4101,12 +3731,7 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                 float rowH = 40.0f;
                 ImVec2 rmin(cx + 12, ry), rmax(cx + cw - 12, ry + rowH - 4);
                 bool sel = selectedAccts.count(i) > 0;
-                // The row spans the full width, so it has to yield hit-testing to
-                // the Actions button submitted later - otherwise it swallows the
-                // click and just toggles selection.
                 const float actBW = 28.0f, actBH = 24.0f;
-                // centre the button under the "Actions" header rather than
-                // left-aligning the box against the label's first glyph
                 const float actX = colAct + (ImGui::CalcTextSize("Actions").x - actBW) * 0.5f;
                 ImVec2 actMin(actX, ry + (rowH - 4.0f - actBH) * 0.5f);
                 ImVec2 actMax(actMin.x + actBW, actMin.y + actBH);
@@ -4127,9 +3752,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     dl->AddLine(ImVec2(cbc.x - 3, cbc.y), ImVec2(cbc.x - 1, cbc.y + 3), ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
                     dl->AddLine(ImVec2(cbc.x - 1, cbc.y + 3), ImVec2(cbc.x + 4, cbc.y - 3), ImGui::ColorConvertFloat4ToU32(theme::accent), 2.0f);
                 }
-                // Roblox avatar headshot thumbnail in the Account column. The
-                // texture is cached by userId; a null texture falls back to an
-                // initial-letter circle until the PNG finishes downloading.
                 ID3D11ShaderResourceView* avTex = nullptr;
                 {
                     std::lock_guard<std::mutex> alock(backend::accountsMutex);
@@ -4149,7 +3771,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     rowPsLabel.c_str());
                 dl->AddText(ImVec2(colStat, ry + 9), ImGui::ColorConvertFloat4ToU32(theme::good), "Ready");
 
-                // Actions: a dot button opening a small copy menu for this account.
                 {
                     const float abw = actBW, abh = actBH;
                     ImVec2 amn = actMin, amx = actMax;
@@ -4159,8 +3780,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     bool aHov = ImGui::IsItemHovered();
                     bool popOpen = ImGui::IsPopupOpen("rowacts");
                     if (ImGui::IsItemClicked() && !popOpen) ImGui::OpenPopup("rowacts");
-                    // Re-read after opening: ImGui discards a popup that was
-                    // opened but never submitted during the same frame.
                     popOpen = ImGui::IsPopupOpen("rowacts");
 
                     dl->AddRectFilled(amn, amx, ImGui::ColorConvertFloat4ToU32(
@@ -4169,12 +3788,9 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                         (aHov || popOpen) ? ImVec4(theme::accent.x, theme::accent.y, theme::accent.z, 0.55f)
                                           : theme::border), 7.0f, 0, 1.1f);
                     {
-                        // A copy glyph (two sheets) drawn by hand on whole-pixel
-                        // coords so it stays sharp at this size.
                         float dcx = floorf(amn.x + abw * 0.5f) + 0.5f;
                         float dcy = floorf(amn.y + abh * 0.5f) + 0.5f;
                         ImU32 du = ImGui::ColorConvertFloat4ToU32((aHov || popOpen) ? theme::text : theme::subtext);
-                        // The real Lucide "copy" glyph, snapped to whole pixels.
                         ImGui::PushFont(theme::fontIcon);
                         std::string cg = icon::Str(icon::COPY);
                         ImVec2 cgs = ImGui::CalcTextSize(cg.c_str());
@@ -4184,7 +3800,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
                     }
 
                     if (popOpen) {
-                        // pull this account's secrets only while the menu is open
                         std::string uname, pass, cookie;
                         { std::lock_guard<std::mutex> alock(backend::accountsMutex);
                           if (i < (int)backend::accounts.size()) {
@@ -4250,11 +3865,9 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
         }
     }
 
-    // reserve the consumed vertical space for the (non-scrolling) content window
     ImGui::SetCursorScreenPos(ImVec2(baseX, row2Y + accountsH + 8.0f));
     ImGui::Dummy(ImVec2(1, 1));
 
-    // ----- Paste Cookies modal -----
     if (wantPasteModal) { wantPasteModal = false; ImGui::OpenPopup("PasteCookiesModal"); pasteBuf.assign(8192, 0); }
     ImGui::SetNextWindowSize(ImVec2(460, 300));
     if (ImGui::BeginPopupModal("PasteCookiesModal", nullptr, ImGuiWindowFlags_NoResize)) {
@@ -4286,9 +3899,6 @@ static void PageAccountManager(HWND hwnd, bool& gotoMultiInstance) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
     if (user32) {
@@ -4297,8 +3907,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         if (setCtx) setCtx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
-    // Admin rights are requested on demand (see EnsureElevatedFor), only when
-    // a feature that actually needs them is used - not forced at launch.
 
     wchar_t pathBuf[MAX_PATH];
     GetModuleFileNameW(nullptr, pathBuf, MAX_PATH);
@@ -4307,7 +3915,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     g_exeDir = exeDir;
     backend::Init(exeDir);
 
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); // required before any WebView2 calls
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
@@ -4324,26 +3932,9 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
         100, 100, 1100, 800, nullptr, nullptr, wc.hInstance, nullptr);
 
-    // Force DWM to never draw non-client (caption/border) decoration,
-    // independent of window style - this is what actually killed the
-    // residual native bar that WS_CAPTION removal alone didn't fully clear.
-    //
-    // (A DWMWA_WINDOW_CORNER_PREFERENCE call was tried here to fix the close
-    // button's corner clipping against Windows 11's auto-rounded corners,
-    // but it caused DWM to reinstate a native caption bar above our custom
-    // one, so it's gone. The window's actual shape is now explicitly set via
-    // SetWindowRgn/ApplyWindowShape below - a classic Win32 mechanism
-    // independent of the DWM attribute that caused that regression.)
     DWMNCRENDERINGPOLICY ncrp = DWMNCRP_DISABLED;
     DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY, &ncrp, sizeof(ncrp));
 
-    // DWM plays its own fade/highlight transition animation on a window
-    // whenever it activates/deactivates, independent of anything our render
-    // loop does. That's a plausible source of the white flash on switching
-    // to another app and back. Unlike DWMWA_WINDOW_CORNER_PREFERENCE (which
-    // regressed the title bar earlier), this attribute is long-established
-    // (pre-Windows 11) and only concerns animation, not NC rendering, so it
-    // shouldn't interact with the policy set above.
     BOOL disableTransitions = TRUE;
     DwmSetWindowAttribute(hwnd, DWMWA_TRANSITIONS_FORCEDISABLED, &disableTransitions, sizeof(disableTransitions));
 
@@ -4404,22 +3995,19 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
 
-    int activePage = 0; // 0 = Account Manager, 1 = Multi-Instance watcher
+    int activePage = 0;
     int lastActivePage = 0;
-    float pageAnimT = 1.0f; // 0 = just switched, eases to 1 at rest
+    float pageAnimT = 1.0f;
     (void)lastActivePage; (void)pageAnimT;
     bool running = true;
-    bool animating = true;          // something on screen is still moving
-    double lastFrameTime = 0.0;     // real-clock stamp of the last presented frame
-    bool wasDormant = false;        // already trimmed for this background stretch?
+    bool animating = true;
+    double lastFrameTime = 0.0;
+    bool wasDormant = false;
     idlectl::windowActive = (GetForegroundWindow() == hwnd);
     while (running) {
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             if (msg.message == WM_QUIT) running = false;
-            // Any real user input restarts the "interactive" window: full
-            // frame rate for a short tail afterwards so hover/press
-            // animations play out smoothly instead of stepping.
             if ((msg.message >= WM_MOUSEFIRST && msg.message <= WM_MOUSELAST) ||
                 (msg.message >= WM_KEYFIRST && msg.message <= WM_KEYLAST) ||
                 msg.message == WM_NCMOUSEMOVE || msg.message == WM_NCLBUTTONDOWN) {
@@ -4431,16 +4019,12 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         }
         if (!running) break;
 
-        // Minimized: there is nothing to draw at all. Block outright - this
-        // is a literal 0% CPU / no GPU state until Windows sends a message.
         if (IsIconic(hwnd)) {
             if (!wasDormant) { wasDormant = true; idlectl::TrimWorkingSet(); }
             WaitMessage();
             continue;
         }
         if (!idlectl::windowActive) {
-            // Only once per background stretch - trimming repeatedly would
-            // just thrash pages back and forth.
             if (!wasDormant) { wasDormant = true; idlectl::TrimWorkingSet(); }
         } else {
             wasDormant = false;
@@ -4451,12 +4035,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         const double now = idlectl::NowSeconds();
         const bool interactive = (now - idlectl::lastInteract) < 0.5;
 
-        // How long until we're allowed to draw again:
-        //   foreground + interacting/animating -> uncapped (vsync paces us)
-        //   foreground, idle                   -> 20 Hz, just the starfield
-        //   background                         -> 4 Hz housekeeping tick, so
-        //                                         async results still land,
-        //                                         with every animation frozen
         double minInterval;
         if (!idlectl::windowActive)
             minInterval = (idlectl::forceFrames > 0) ? (1.0 / 30.0) : 0.25;
@@ -4467,37 +4045,19 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
         double waitFor = minInterval - (now - lastFrameTime);
         if (waitFor > 0.001) {
-            // Sleeps the thread properly; any input wakes it immediately, so
-            // throttling never costs responsiveness.
             MsgWaitForMultipleObjectsEx(0, nullptr, (DWORD)(waitFor * 1000.0 + 0.5),
                                         QS_ALLINPUT, MWMO_INPUTAVAILABLE);
             continue;
         }
 
-        // Advance the animation clock only for frames the user can see moving.
-        // While we're in the background it stands still, so nothing animates
-        // and nothing jumps when focus comes back.
         if (idlectl::windowActive) {
             double dt = (lastFrameTime > 0.0) ? (now - lastFrameTime) : 0.0;
-            idlectl::animTime += (dt < 0.25 ? dt : 0.25); // clamp across long sleeps
+            idlectl::animTime += (dt < 0.25 ? dt : 0.25);
         }
         lastFrameTime = now;
         if (idlectl::forceFrames > 0) idlectl::forceFrames--;
 
-        // Present() used to run here, at the *top* of the loop, before this
-        // frame's UI was even built - so every shown frame was actually the
-        // previous iteration's content, and the very first frame (or any
-        // frame right after a buffer-invalidating event, e.g. another app
-        // briefly taking focus or a screenshot tool grabbing the window)
-        // could present a back buffer nothing had been rendered into yet,
-        // which reads as a white flash. The real Present() now happens once
-        // the frame is actually rendered, at the bottom of the loop; this is
-        // just a cheap poll to skip building a frame nobody can see while
-        // the window is known to be fully occluded.
         if (g_SwapChainOccluded && g_pSwapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED) {
-            // Fully covered (e.g. by a full-screen Roblox client): draw
-            // nothing and idle in an interruptible wait rather than a
-            // Sleep, so we come back the instant the user alt-tabs.
             MsgWaitForMultipleObjectsEx(0, nullptr, 200, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
             continue;
         }
@@ -4520,8 +4080,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
         DrawTitleBar(hwnd, io2.DisplaySize.x);
 
-        // Redesigned single-screen layout: no sidebar. activePage 0 = Account
-        // Manager, 1 = Multi-Instance watcher (reached via the top-right button).
         {
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -4541,9 +4099,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
 
-            // Switching pages retires every widget on the old one; dropping
-            // their animation state keeps the map from growing and stops a
-            // half-faded entry from being mistaken for a live animation.
             if (activePage != lastActivePage) {
                 g_widgetAnim.clear();
                 lastActivePage = activePage;
@@ -4554,9 +4109,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
             rootDl->AddRect(ImVec2(0.5f, 0.5f), ImVec2(io2.DisplaySize.x - 0.5f, io2.DisplaySize.y - 0.5f),
                 ImGui::ColorConvertFloat4ToU32(theme::border), 12.0f, 0, 1.0f);
 
-            // Footer: a hairline across the bottom with the credit sitting in a
-            // gap punched out of its middle. Drawn on the foreground list so the
-            // page's content child (which renders after us) can't cover it.
             {
                 ImDrawList* rootDl = ImGui::GetForegroundDrawList();
                 const char* credit = "credits to vzqnx";
@@ -4575,15 +4127,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         }
         ImGui::End();
 
-        // Decide whether the next iteration still has to run at full rate.
-        // Hover/press easing only happens while the cursor is in our window
-        // or something is held/focused; once all of that is false the UI is
-        // visually at rest and the ambient throttle takes over.
         {
-            // Widgets that scrolled/paged out of view can leave a stale
-            // mid-ease value behind forever; only trust the easing check
-            // while the cursor is actually over us, which is the only way a
-            // hover ease can be live in the first place.
             const bool cursorInside = ImGui::IsMousePosValid(&io2.MousePos)
                 && io2.MousePos.x >= 0 && io2.MousePos.y >= 0
                 && io2.MousePos.x < io2.DisplaySize.x && io2.MousePos.y < io2.DisplaySize.y;
@@ -4591,8 +4135,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
             bool widgetsSettling = false;
             if (cursorInside) for (auto& kv : g_widgetAnim) {
-                // Resting states are exactly 0 (idle) or 1 (hovered/on);
-                // anything in between is mid-ease.
                 if (kv.second > 0.004f && kv.second < 0.996f) { widgetsSettling = true; break; }
                 if (kv.second < -0.004f) { widgetsSettling = true; break; }
             }
@@ -4606,17 +4148,12 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
 
         ImGui::Render();
 
-        // Grow/shrink the window so the page ends right under its last card
-        // instead of leaving a dead strip. Skipped while maximized or being
-        // dragged by the user, and only past a few pixels of slack so a
-        // rounding wobble can't start a resize feedback loop.
         if (activePage == 0 && g_desiredClientH > 0.0f && !IsZoomed(hwnd) && !IsIconic(hwnd)) {
             RECT cr{};
             GetClientRect(hwnd, &cr);
             int curClientH = cr.bottom - cr.top;
             int wantClientH = (int)(g_desiredClientH + 0.5f);
 
-            // don't outgrow the monitor the window is on
             HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             MONITORINFO mi{}; mi.cbSize = sizeof(mi);
             if (GetMonitorInfoW(mon, &mi)) {
@@ -4628,7 +4165,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
             if (abs(wantClientH - curClientH) > 4) {
                 RECT wr{};
                 GetWindowRect(hwnd, &wr);
-                int chrome = (wr.bottom - wr.top) - curClientH;   // borders we must keep
+                int chrome = (wr.bottom - wr.top) - curClientH;
                 SetWindowPos(hwnd, nullptr, 0, 0, wr.right - wr.left, wantClientH + chrome,
                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
@@ -4639,10 +4176,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int) {
         g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clearColorNew);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         {
-            // Vsync only when we're running free at display rate. Once we're
-            // pacing ourselves (idle/background ticks) an extra vsync wait
-            // would just park us in DXGI holding a presentation slot the
-            // foreground game could be using.
             HRESULT hrp = g_pSwapChain->Present(minInterval > 0.0 ? 0 : 1, 0);
             g_SwapChainOccluded = (hrp == DXGI_STATUS_OCCLUDED);
         }

@@ -207,9 +207,6 @@ void Shutdown() {
     ReleaseMultiRobloxMutex();
 }
 
-// ---------------------------------------------------------------------------
-// Process helpers
-// ---------------------------------------------------------------------------
 static std::vector<DWORD> FindPidsByName(const wchar_t* exeName) {
     std::vector<DWORD> pids;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -275,21 +272,8 @@ static std::wstring FindHandleExe() {
 
 static std::wstring Widen(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
-// ---------------------------------------------------------------------------
-// Multi-instance watcher
-// ---------------------------------------------------------------------------
 
-// One pass over every running RobloxPlayerBeta.exe: finds its
-// ROBLOX_singletonEvent handle (if any) via handle64.exe and closes it, so
-// another instance can be launched alongside it. Returns false only on a
-// hard failure (handle64.exe missing) - not finding any locks isn't a
-// failure, it just means nothing needed closing.
 static bool CloseRobloxSingletonsOnce(const std::wstring& handleExe, const std::vector<DWORD>& pids) {
-    // Same match the proven RobloxMulti.ps1 uses: require the handle *type*
-    // to be an Event and pull out the validated hex handle id. The old parse
-    // just grabbed everything before the first colon, which quietly failed
-    // whenever handle64's column spacing/banner lines differed from what it
-    // expected - so the singleton on already-open processes never got closed.
     static const std::regex kSingletonRe(
         R"(([0-9A-Fa-f]+):\s+Event\b.*ROBLOX_singletonEvent)",
         std::regex::icase);
@@ -309,9 +293,6 @@ static bool CloseRobloxSingletonsOnce(const std::wstring& handleExe, const std::
             Log("[!] Singleton event found (handle " + handleId + ", pid " + std::to_string(pid) + ") - closing it...");
             std::wstring closeArgs = L"-c " + Widen(handleId) + L" -p " + std::to_wstring(pid) + L" -y -nobanner";
             std::string closeOut = RunCaptureOutput(handleExe, closeArgs);
-            // handle64 needs to open the target process with enough rights to
-            // close a handle inside it; without elevation it prints an error
-            // and the lock survives, which looks like "it just doesn't work".
             std::string lowered = closeOut;
             for (char& c : lowered) c = (char)tolower((unsigned char)c);
             if (lowered.find("error") != std::string::npos ||
@@ -326,9 +307,6 @@ static bool CloseRobloxSingletonsOnce(const std::wstring& handleExe, const std::
     return true;
 }
 
-// Closes any current Roblox singleton locks right now, once, without
-// starting the continuous background watcher. This is what the header's
-// "Multi Instance" button runs - call from a worker thread.
 void CloseRobloxSingletonsNow() {
     std::wstring handleExe = FindHandleExe();
     if (handleExe.empty()) {
@@ -368,13 +346,6 @@ static void WatcherLoop() {
             else Log("[i] Roblox closed, waiting...");
         }
 
-        // The singleton sweep shells out to handle64.exe, which enumerates
-        // every handle on the system - by far the most expensive thing this
-        // app can do, and it used to run twice a second forever. A process
-        // that already had its lock closed never grows a new one, so the
-        // sweep is only needed when a Roblox process we haven't handled yet
-        // shows up. Between those events this thread just does one cheap
-        // process-list snapshot per second.
         std::set<DWORD> current(pids.begin(), pids.end());
         bool newProcess = false;
         for (DWORD pid : current) {
@@ -425,9 +396,6 @@ void KillAllRobloxInstances() {
     Log("[v] Closed " + std::to_string(closed) + " of " + std::to_string(pids.size()) + " Roblox instance(s).");
 }
 
-// ---------------------------------------------------------------------------
-// Live dashboard stats - throttled/cached since the UI polls these every frame
-// ---------------------------------------------------------------------------
 std::atomic<bool> uiForeground{ true };
 
 int CountRobloxProcesses(bool force) {
@@ -461,7 +429,6 @@ float GetCpuUsagePercent() {
     user.LowPart = userFt.dwLowDateTime; user.HighPart = userFt.dwHighDateTime;
 
     if (!first) {
-        // Kernel time as reported by GetSystemTimes already includes idle time.
         ULONGLONG total = (kernel.QuadPart - lastKernel.QuadPart) + (user.QuadPart - lastUser.QuadPart);
         ULONGLONG idleDelta = idle.QuadPart - lastIdle.QuadPart;
         if (total > 0) cached = (float)(total - idleDelta) * 100.0f / (float)total;
@@ -487,9 +454,6 @@ std::string GetUptimeString() {
     return buf;
 }
 
-// ---------------------------------------------------------------------------
-// Cookie clearing
-// ---------------------------------------------------------------------------
 typedef struct sqlite3 sqlite3;
 typedef int  (__cdecl* pfn_sqlite3_open)(const char*, sqlite3**);
 typedef int  (__cdecl* pfn_sqlite3_close)(sqlite3*);
@@ -575,15 +539,6 @@ static std::vector<std::filesystem::path> findFiles(const std::filesystem::path&
     return results;
 }
 
-// Chrome/Edge/Opera/Firefox all keep their cookie DB in WAL journal mode
-// while the browser is running, so a just-written cookie often lives only in
-// the "-wal" sidecar file, not yet checkpointed into the main DB file. A scan
-// that only copies the main file silently sees zero rows for any cookie
-// written since the last checkpoint - which is exactly the case where the
-// user is actively signed in right now. Copy the sidecars alongside the main
-// file (same naming convention SQLite itself uses) so the copy can recover
-// them; this is best-effort since the sidecars may legitimately not exist
-// (e.g. the browser already checkpointed and closed cleanly).
 static void copyDbWithWalSidecars(const std::filesystem::path& srcMain, const std::filesystem::path& dstMain) {
     std::error_code ec;
     for (const char* suffix : { "-wal", "-shm" }) {
@@ -601,8 +556,6 @@ static void removeDbWithWalSidecars(const std::filesystem::path& mainPath) {
     std::filesystem::remove(mainPath.string() + "-shm", ec);
 }
 
-// Read-only: counts roblox.com cookie rows without modifying the browser's DB.
-// Queries a throwaway copy so a locked/in-use Cookies file doesn't block the scan.
 static int countRobloxRows(const std::filesystem::path& dbPath, bool chromium) {
     static const int SQLITE_OK = 0;
     static SqliteDynApi sq = loadSqliteDynApi();
@@ -660,10 +613,6 @@ static int deleteRobloxRows(const std::filesystem::path& dbPath, bool chromium) 
         g_lastCookieError = "copy_file failed: " + ec.message();
         return -1;
     }
-    // See countRobloxRows: without the WAL sidecar, a cookie written since
-    // the browser's last checkpoint isn't in the main file we just copied,
-    // so DELETE here would silently miss it and "Clear Cookies" would leave
-    // the live session cookie intact.
     copyDbWithWalSidecars(dbPath, tmp);
 
     sqlite3* db = nullptr;
@@ -673,9 +622,6 @@ static int deleteRobloxRows(const std::filesystem::path& dbPath, bool chromium) 
         return -1;
     }
 
-    // Forcing DELETE journal mode checkpoints the WAL we just copied in back
-    // into the main file and drops the -wal/-shm sidecars, so the single
-    // `tmp` file renamed over dbPath below is the complete, consistent result.
     sq.exec(db, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, nullptr);
 
     const char* sql = chromium
@@ -720,9 +666,6 @@ void ClearBrowserCookies() {
     }
 
     Log("[i] Closing browsers to release cookie database locks...");
-    // std::system() shells out through cmd.exe, which briefly flashes a
-    // console window since this app has none of its own. RunCaptureOutput
-    // runs taskkill directly with CREATE_NO_WINDOW instead.
     RunCaptureOutput(L"taskkill", L"/F /T /IM chrome.exe /IM msedge.exe /IM firefox.exe /IM opera.exe /IM opera_gx.exe /IM crashpad_handler.exe");
 
     struct ChromiumBrowser { std::string name, profileRoot; };
@@ -768,10 +711,6 @@ void ClearBrowserCookies() {
     }
 }
 
-// Read-only inventory of which supported browsers are installed and whether they
-// currently hold a roblox.com cookie. Never touches the live DB - always queries a
-// throwaway copy - so it's safe to run automatically (e.g. every time the Cookie
-// Cleaner tab is opened) without interrupting a running browser.
 void ScanBrowserCookies() {
     browserCookieScanning = true;
 
@@ -798,9 +737,6 @@ void ScanBrowserCookies() {
         if (status.installed) {
             auto cookieFiles = findFiles(browser.profileRoot, "Cookies");
             if (cookieFiles.empty()) {
-                // The profile directory exists but we found no "Cookies" DB anywhere
-                // under it - that's not the same as "confirmed no cookies", it means
-                // the scan itself couldn't locate anything to check.
                 status.scanFailed = true;
                 Log("[!] " + browser.name + ": profile found but no Cookies DB located under " + browser.profileRoot);
             }
@@ -875,9 +811,6 @@ void ClearRobloxCookieFileAndBrowsers() {
     Log("[v] Cookie cleanup finished.");
 }
 
-// ---------------------------------------------------------------------------
-// MAC spoofing
-// ---------------------------------------------------------------------------
 static std::string generateRandomMac() {
     std::mt19937 rng((unsigned)std::chrono::steady_clock::now().time_since_epoch().count());
     std::uniform_int_distribution<int> dist(0x00, 0xFF);
@@ -940,8 +873,6 @@ static std::string getCurrentMac(const std::string& adapterId) {
     return "(could not read)";
 }
 
-// Returns the IP_ADAPTER_INFO::Index for the adapter matching this registry
-// NetCfgInstanceID subkey, or -1 if not found / not bound to TCP/IP.
 static int getAdapterIfIndex(const std::string& adapterId) {
     std::string regPath = "SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\" + adapterId;
     HKEY key;
@@ -974,11 +905,9 @@ static int getAdapterIfIndex(const std::string& adapterId) {
     return -1;
 }
 
-// Interface index Windows would use to reach the public internet right now
-// (the live default route), or -1 if there isn't one.
 static int getDefaultRouteIfIndex() {
     DWORD bestIfIndex = 0;
-    IPAddr dest = 0x08080808; // 8.8.8.8 - byte-symmetric, so byte order doesn't matter
+    IPAddr dest = 0x08080808;
     if (GetBestInterface(dest, &bestIfIndex) != NO_ERROR) return -1;
     return (int)bestIfIndex;
 }
@@ -1128,9 +1057,6 @@ void RestoreAdapter(int index) {
     RefreshAdapters();
 }
 
-// ---------------------------------------------------------------------------
-// Account manager: WinHTTP calls to Roblox's API + DPAPI-encrypted local store
-// ---------------------------------------------------------------------------
 std::mutex accountsMutex;
 std::vector<RobloxAccount> accounts;
 
@@ -1277,8 +1203,6 @@ static std::string UrlEncode(const std::string& s) {
     return out.str();
 }
 
-// Two-step CSRF dance: first POST gets rejected with the token in a response
-// header, second POST (with that token) actually succeeds.
 static std::string GetAuthTicket(const std::string& cookie) {
     std::wstring csrf;
     HttpResponse csrfResp = HttpRequest(L"auth.roblox.com", L"/v1/authentication-ticket/", L"POST", cookie,
@@ -1343,7 +1267,6 @@ static bool RefreshStoredAccountCookie(int index, RobloxAccount& account) {
 }
 
 static std::wstring FindRobloxPlayerExe() {
-    // A downloaded build wins over whatever the system installer left behind.
     {
         std::lock_guard<std::mutex> lock(robloxBuildMutex);
         if (!robloxBuild.activeVersion.empty()) {
@@ -1612,9 +1535,6 @@ void SetAccountAlias(int index, const std::string& alias) {
     Log("[v] Saved alias for " + accountName);
 }
 
-// Shared implementation for public + private-server launches. An empty
-// linkCode requests the normal public game; otherwise we ask PlaceLauncher for
-// the private game behind that link code.
 static void LaunchAccountInternal(int index, long long placeId, const std::string& linkCode) {
     RobloxAccount account;
     {
@@ -1662,8 +1582,6 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         "+browsertrackerid:" + browserTrackerId +
         "+robloxLocale:en_us+gameLocale:en_us+channel:+LaunchExp:InApp";
 
-    // With a downgraded/pinned build selected the roblox-player: protocol would
-    // hand the launch to the system install, so go straight to the exe instead.
     bool pinnedBuild;
     { std::lock_guard<std::mutex> lock(robloxBuildMutex); pinnedBuild = !robloxBuild.activeVersion.empty(); }
     if (pinnedBuild) {
@@ -1740,7 +1658,7 @@ static std::string FormatJoinDate(const std::string& iso) {
     return std::string(kMonthNames[m - 1]) + " " + std::to_string(d) + ", " + std::to_string(y);
 }
 
-static std::mutex g_gmtimeMutex; // std::gmtime returns a pointer to shared static storage
+static std::mutex g_gmtimeMutex;
 
 static std::string FormatAccountAge(const std::string& iso) {
     int y = 0, m = 0, d = 0;
@@ -1930,13 +1848,11 @@ void LoadPlaceId() {
     if (f >> id) savedPlaceId = id;
 }
 
-// ---- Saved place presets (Launch Settings dropdown) -------------------------
 std::mutex savedPlacesMutex;
 std::vector<SavedPlace> savedPlaces;
 
 static std::wstring PlacesFilePath() { return g_exeDir + L"\\places.dat"; }
 
-// Writes the current savedPlaces list to disk. Caller must hold savedPlacesMutex.
 static void WriteSavedPlacesLocked() {
     std::ofstream f(PlacesFilePath().c_str(), std::ios::trunc);
     if (!f) return;
@@ -1955,7 +1871,6 @@ void LoadSavedPlaces() {
             if (!(ss >> id) || id <= 0) continue;
             std::string name;
             std::getline(ss, name);
-            // trim the single leading space left by the id, plus any stray CR
             size_t b = name.find_first_not_of(" \t\r");
             size_t e = name.find_last_not_of(" \t\r");
             name = (b == std::string::npos) ? std::string() : name.substr(b, e - b + 1);
@@ -1963,7 +1878,6 @@ void LoadSavedPlaces() {
         }
     }
     if (savedPlaces.empty()) {
-        // First run: seed the defaults and persist them.
         savedPlaces = {
             { 10561483644LL,     "Mystic Falls" },
             { 10561482233LL,     "New Orleans" },
@@ -1994,7 +1908,6 @@ void RemoveSavedPlace(long long id) {
     WriteSavedPlacesLocked();
 }
 
-// ---- private servers -------------------------------------------------------
 std::mutex activePrivateServerMutex;
 PrivateServer activePrivateServer;
 std::mutex privateServersMutex;
@@ -2004,7 +1917,6 @@ std::atomic<bool> privateServerResolving{ false };
 static std::wstring ActivePrivateServerFilePath() { return g_exeDir + L"\\privateserver.dat"; }
 static std::wstring PrivateServersFilePath()      { return g_exeDir + L"\\privateservers.dat"; }
 
-// "<placeId> <linkCode> <name...>" - name may contain spaces, code never does.
 static bool ParsePrivateServerLine(const std::string& line, PrivateServer& out) {
     std::istringstream ss(line);
     long long id = 0;
@@ -2020,7 +1932,6 @@ static bool ParsePrivateServerLine(const std::string& line, PrivateServer& out) 
     return !out.linkCode.empty();
 }
 
-// Caller must hold privateServersMutex.
 static void WriteSavedPrivateServersLocked() {
     std::ofstream f(PrivateServersFilePath().c_str(), std::ios::trunc);
     if (!f) return;
@@ -2091,12 +2002,10 @@ void ClearActivePrivateServer() {
     Log("[i] Private server cleared - launches will join the public game.");
 }
 
-// Pulls "<key>=<value>" out of a query string; value ends at & or #.
 static std::string QueryParam(const std::string& url, const std::string& key) {
     std::string pat = key + "=";
     size_t pos = url.find(pat);
     if (pos == std::string::npos) return "";
-    // make sure we matched a whole parameter name, not a suffix of one
     if (pos > 0 && url[pos - 1] != '?' && url[pos - 1] != '&') return "";
     pos += pat.size();
     size_t end = url.find_first_of("&#", pos);
@@ -2110,7 +2019,6 @@ static std::string TrimCopy(const std::string& s) {
     return s.substr(b, e - b + 1);
 }
 
-// POSTs to the share-link resolver, doing the usual CSRF two-step.
 static std::string ResolveShareLink(const std::string& shareCode, const std::string& cookie) {
     std::string body = "{\"linkId\":\"" + shareCode + "\",\"linkType\":\"Server\"}";
     std::vector<std::pair<std::wstring, std::wstring>> headers = {
@@ -2141,7 +2049,6 @@ bool ResolvePrivateServerLink(const std::string& input, const std::string& cooki
     std::string s = TrimCopy(input);
     if (s.empty()) { Log("[!] Paste a private server link first."); return false; }
 
-    // Form 2: a direct game URL carrying the link code.
     std::string direct = QueryParam(s, "privateServerLinkCode");
     if (!direct.empty()) {
         long long placeId = 0;
@@ -2154,10 +2061,8 @@ bool ResolvePrivateServerLink(const std::string& input, const std::string& cooki
         return true;
     }
 
-    // Form 1/3: a share link (or the bare share code).
     std::string code = QueryParam(s, "code");
     if (code.empty()) {
-        // treat the whole string as a bare code if it has no URL punctuation
         if (s.find_first_of("/?&= ") != std::string::npos) {
             Log("[!] That does not look like a private server link.");
             return false;
@@ -2190,7 +2095,6 @@ bool ResolvePrivateServerLink(const std::string& input, const std::string& cooki
     return true;
 }
 
-// ---- Roblox build manager (downgrade / force live) -------------------------
 std::mutex robloxBuildMutex;
 RobloxBuildState robloxBuild;
 std::vector<std::string> downloadedBuilds;
@@ -2198,8 +2102,6 @@ std::vector<std::string> downloadedBuilds;
 static std::filesystem::path BuildsRoot() { return std::filesystem::path(g_exeDir) / "Builds"; }
 static std::wstring ActiveBuildFilePath() { return g_exeDir + L"\\activebuild.dat"; }
 
-// Where each deployment package unpacks to, relative to the build root. Mirrors
-// the layout Roblox's own bootstrapper (and RDD) uses for WindowsPlayer.
 struct PackageDir { const char* package; const char* dir; };
 static const PackageDir kPlayerPackages[] = {
     { "RobloxApp.zip",                      ""                                              },
@@ -2226,7 +2128,7 @@ static const PackageDir kPlayerPackages[] = {
 
 static const char* PackageDestination(const std::string& package) {
     for (const auto& p : kPlayerPackages) if (package == p.package) return p.dir;
-    return nullptr; // unknown / installer-only package - skipped
+    return nullptr;
 }
 
 static void SetBuildStatus(const std::string& text, float progress, bool busy) {
@@ -2249,8 +2151,6 @@ static void RescanDownloadedBuildsLocked() {
 }
 
 void LoadRobloxBuilds() {
-    // line 1 = the build to launch ("-" when off), line 2 = the last build that
-    // was switched on, so toggling back on picks the same one.
     std::string active, preferred;
     std::wstring path = ActiveBuildFilePath();
     if (std::filesystem::exists(path)) {
@@ -2270,7 +2170,6 @@ void LoadRobloxBuilds() {
     auto onDisk = [&](const std::string& h) {
         return !h.empty() && std::find(downloadedBuilds.begin(), downloadedBuilds.end(), h) != downloadedBuilds.end();
     };
-    // only honour either one if that build is actually still on disk
     if (onDisk(active)) robloxBuild.activeVersion = active;
     if (onDisk(preferred)) robloxBuild.preferredVersion = preferred;
 }
@@ -2311,7 +2210,6 @@ void DeleteBuild(const std::string& versionHash) {
 }
 
 void FetchWeaoVersions() {
-    // WEAO gates its API on this exact user agent (docs.weao.xyz).
     std::vector<std::pair<std::wstring, std::wstring>> hdrs = { { L"User-Agent", L"WEAO-3PService" } };
     HttpResponse cur = HttpRequest(L"weao.xyz", L"/api/versions/current", L"GET", "", hdrs, "");
     if (!cur.ok || cur.status != 200) {
@@ -2343,8 +2241,6 @@ void FetchWeaoVersions() {
     robloxBuild.weaoLoaded = !live.empty();
 }
 
-// Streams a URL straight to disk so a 100 MB package never sits in memory.
-// onProgress (may be null) receives 0..1 as the bytes arrive.
 static bool DownloadToFile(const std::string& url, const std::filesystem::path& dest,
                            const std::function<void(float)>& onProgress = nullptr) {
     std::wstring host, path;
@@ -2353,8 +2249,6 @@ static bool DownloadToFile(const std::string& url, const std::filesystem::path& 
     HINTERNET hSession = WinHttpOpen(L"VelsMultiTool/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!hSession) return false;
-    // Without explicit timeouts a stalled CDN socket can park a read forever,
-    // which looks exactly like a frozen progress bar.
     WinHttpSetTimeouts(hSession, 30000, 30000, 60000, 60000);
     HINTERNET hConnect = WinHttpConnect(hSession, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (!hConnect) { WinHttpCloseHandle(hSession); return false; }
@@ -2369,7 +2263,6 @@ static bool DownloadToFile(const std::string& url, const std::filesystem::path& 
         WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
             WINHTTP_HEADER_NAME_BY_INDEX, &status, &size, WINHTTP_NO_HEADER_INDEX);
         if (status == 200) {
-            // Content-Length lets us report a real percentage while the bytes land.
             long long total = 0;
             {
                 DWORD len = 0, lsz = sizeof(len);
@@ -2391,8 +2284,6 @@ static bool DownloadToFile(const std::string& url, const std::filesystem::path& 
                     if (onProgress && total > 0) onProgress((float)((double)got / (double)total));
                 }
                 out.close();
-                // A dropped connection ends the loop quietly, leaving a short
-                // file that would only blow up later inside tar - catch it here.
                 if (ok && total > 0 && got < total) {
                     Log("[!] " + dest.filename().string() + " stopped short (" +
                         std::to_string(got) + " of " + std::to_string(total) + " bytes).");
@@ -2409,15 +2300,10 @@ static bool DownloadToFile(const std::string& url, const std::filesystem::path& 
     return ok;
 }
 
-// Unpacks a zip with the tar.exe that ships with Windows 10 1803+ (bsdtar reads
-// zips), so we don't have to vendor a deflate implementation.
 static bool ExtractZip(const std::filesystem::path& zip, const std::filesystem::path& dest) {
     std::error_code ec;
     std::filesystem::create_directories(dest, ec);
 
-    // A trailing backslash would escape the closing quote on the command line
-    // ("C:\dir\" parses as C:\dir"), so tar would try to chdir into a path with
-    // a quote glued on the end and fail every single time.
     std::wstring destArg = dest.wstring();
     while (!destArg.empty() && (destArg.back() == L'\\' || destArg.back() == L'/')) destArg.pop_back();
 
@@ -2435,8 +2321,6 @@ static bool ExtractZip(const std::filesystem::path& zip, const std::filesystem::
         Log("[!] Could not run tar.exe to unpack " + zip.filename().string() + ".");
         return false;
     }
-    // Never wait forever - a wedged tar would freeze the whole install with no
-    // way out but killing the app.
     DWORD code = 1;
     if (WaitForSingleObject(pi.hProcess, 10 * 60 * 1000) == WAIT_TIMEOUT) {
         Log("[!] tar.exe hung unpacking " + zip.filename().string() + " - killing it.");
@@ -2459,7 +2343,6 @@ void DownloadRobloxBuild(std::string versionHash) {
         ~BusyGuard() { std::lock_guard<std::mutex> lock(robloxBuildMutex); robloxBuild.busy = false; }
     } guard;
 
-    // No hash given: use whatever WEAO says is live right now.
     if (versionHash.empty()) {
         SetBuildStatus("Checking live version...", 0.0f, true);
         FetchWeaoVersions();
@@ -2477,7 +2360,7 @@ void DownloadRobloxBuild(std::string versionHash) {
     if (std::filesystem::exists(buildDir / "RobloxPlayerBeta.exe", ec)) {
         SetBuildStatus("", 0.0f, false);
         SetActiveBuild(versionHash);
-        return; // already downloaded - just switch to it
+        return;
     }
 
     SetBuildStatus("Fetching manifest...", 0.02f, true);
@@ -2489,7 +2372,6 @@ void DownloadRobloxBuild(std::string versionHash) {
         return;
     }
 
-    // The manifest lists packages in blocks; we only care about the .zip names.
     std::vector<std::string> packages;
     {
         std::istringstream ms(std::string(manifest.begin(), manifest.end()));
@@ -2518,8 +2400,6 @@ void DownloadRobloxBuild(std::string versionHash) {
         SetBuildStatus(label, base01, true);
 
         std::filesystem::path zip = tmpDir / pkg;
-        // The CDN drops long transfers now and then, so a package gets a few
-        // attempts before the whole install is written off.
         bool got = false;
         for (int attempt = 1; attempt <= 3 && !got; ++attempt) {
             std::string attemptLabel = attempt == 1 ? label : label + "  retry " + std::to_string(attempt) + "/3";
@@ -2546,7 +2426,6 @@ void DownloadRobloxBuild(std::string versionHash) {
     }
     std::filesystem::remove_all(tmpDir, ec);
 
-    // The client refuses to start without this next to the exe.
     {
         std::ofstream app(buildDir / "AppSettings.xml", std::ios::trunc);
         app << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"
@@ -2641,4 +2520,4 @@ void RefreshSystemStatus(int selectedAccountIndex) {
     systemStatus = s;
 }
 
-} // namespace backend
+}
