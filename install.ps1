@@ -12,12 +12,10 @@ $branch  = 'main'
 $base    = "https://raw.githubusercontent.com/$repo/$branch"
 $dest    = Join-Path (Join-Path $HOME 'Downloads') 'VelsMultiTool'
 # Relative paths under the repo -> placed at the same relative path under $dest.
-# The fonts are loaded from <exe>\fonts\ at runtime, so they must ship alongside.
+# The UI, fonts and WebView2 loader are embedded in the exe.
 $files   = @(
     'VelsMultiTool.exe',
-    'handle64.exe',
-    'fonts/Inter-Variable.ttf',
-    'fonts/Lucide.ttf'
+    'handle64.exe'
 )
 
 # "Launch Browser" in the tool drives a real, separate Chrome window via the

@@ -1,3 +1,8 @@
 #include "resource.h"
 
 IDI_APPICON ICON "../assets/app.ico"
+
+IDR_UI_HTML    RCDATA "../ui/index.html"
+IDR_BRAND_PNG  RCDATA "../assets/brand.png"
+IDR_FONT_INTER RCDATA "../fonts/Inter-Variable.ttf"
+IDR_WV2LOADER  RCDATA "../third_party/webview2/WebView2Loader.dll"

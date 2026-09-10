@@ -1,6 +1,6 @@
 # Vels Multi Tool
 
-Vels Multi Tool is a Windows desktop utility for Roblox workflows. It uses a native C++ Dear ImGui interface with a Win32 + DirectX 11 renderer and keeps the automation/backend code separated from the UI.
+Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a native C++ Win32 app whose interface is an HTML page rendered with Microsoft Edge WebView2, kept separate from the automation/backend code. The page, fonts, brand icon and `WebView2Loader.dll` are all embedded in the exe.
 
 ## Features
 
@@ -18,7 +18,13 @@ Admin rights are requested when a feature needs them, not at startup.
 
 ## Layout
 
-Everything sits on one screen: adding accounts and the version manager on the left, place and private server settings on the right, and the account table underneath. Multi Instance is a toggle in the header rather than a separate page.
+Everything sits on one screen. The header holds Multi Instance, Launch Client (opens the Roblox app without joining a game), Kill All and Launch Selected. The left column has the launch target, private server, add-account and Roblox client cards; the right is the account list, which scrolls on its own instead of growing the window.
+
+Accounts can be reordered by dragging the grip handle, and starred as **priority**. Priority accounts stay grouped at the top and launch first. Order and priority are saved in `accounts.dat` (older files are backed up to `accounts.dat.v3.bak` the first time they're loaded).
+
+Sub-places (e.g. `10561483644`) show their parent game's name and icon, with the sub-place name as a badge.
+
+Set `VELS_DEVTOOLS=1` before starting the exe to enable the WebView2 dev tools and context menu.
 
 ## Quick Install
 
@@ -77,9 +83,12 @@ Then run `VelsMultiTool.exe`. The app will request administrator access when nee
 ## Project Structure
 
 ```text
-assets/              App icon and static assets
-fonts/               UI fonts
-src/main.cpp         Dear ImGui UI and Win32/DirectX app shell
+assets/              App icon (app.ico) and brand image (brand.png)
+fonts/               Inter font, embedded into the exe
+ui/index.html        The whole interface (HTML/CSS/JS), embedded into the exe
+third_party/webview2 WebView2 SDK headers and WebView2Loader.dll
+src/main.cpp         Win32 window, WebView2 host and UI message bridge
+src/json.h           Small JSON reader/writer for the UI bridge
 src/backend.cpp      Roblox, cookie, adapter, account, and launch logic
 src/backend.h        Shared backend data structures and API
 src/login.cpp        Chrome-based Roblox login helper

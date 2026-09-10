@@ -19,6 +19,7 @@ struct RobloxAccount {
     std::string cookie;
     std::string password;
     std::string alias;
+    bool priority = false;
 
     long long friendsCount = -1;
     long long followersCount = -1;
@@ -36,7 +37,10 @@ struct RobloxAccount {
 
 struct PlaceInfo {
     long long placeId = 0;
+    long long rootPlaceId = 0;
     std::string name;
+    std::string placeName;
+    bool isSubPlace = false;
     std::string creator;
     long long visits = -1;
     long long favorites = -1;
@@ -77,6 +81,7 @@ namespace backend {
 
 extern std::mutex logMutex;
 extern std::vector<LogEntry> logLines;
+extern long long logTotal;
 void ClearLog();
 
 extern std::atomic<bool> watching;
@@ -134,7 +139,13 @@ void RemoveAccount(int index);
 void SetAccountPassword(int index, const std::string& password);
 void SetAccountAlias(int index, const std::string& alias);
 
+void MoveAccount(int from, int to);
+void SetAccountPriority(int index, bool priority);
+
 void LaunchAccountIntoPlace(int index, long long placeId);
+
+void LaunchRobloxClient();
+void LaunchAccountClient(int index);
 
 void LaunchAccountIntoPrivateServer(int index, long long placeId, const std::string& linkCode);
 
@@ -152,12 +163,13 @@ extern std::atomic<long long> savedPlaceId;
 void SavePlaceId(long long placeId);
 void LoadPlaceId();
 
-struct SavedPlace { long long id; std::string name; };
+struct SavedPlace { long long id; std::string name; bool favorite = false; };
 extern std::mutex savedPlacesMutex;
 extern std::vector<SavedPlace> savedPlaces;
 void LoadSavedPlaces();
 void AddSavedPlace(long long id, const std::string& name);
 void RemoveSavedPlace(long long id);
+void SetSavedPlaceFavorite(long long id, bool favorite);
 
 struct PrivateServer {
     long long   placeId = 0;

@@ -11,17 +11,20 @@
 
 # Runtime/user data - generated at runtime, never source
 accounts.dat
+accounts.dat.v3.bak
 placeid.dat
 places.dat
 privateserver.dat
 privateservers.dat
 activebuild.dat
 *.preidle.bak
+*.v3.bak
 
 # Roblox clients downloaded by the built-in downgrader
 /Builds/
 /chrome_login_data/
 /webview2_data/
+/webview2_data_admin/
 /web_profiles/
 
 # Editor/OS cruft
