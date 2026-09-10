@@ -159,6 +159,10 @@ body.ready #app{opacity:1}
 .handoff.show .handoff-card{transform:none}
 .handoff-card b{display:block;font-size:14px}
 .handoff-card div div{color:var(--muted);font-size:12px;margin-top:2px}
+.wait-card{flex-direction:column;text-align:center;gap:16px;padding:26px 30px;max-width:340px}
+.wait-card .spin.lg{width:26px;height:26px;margin:0 auto}
+.wait-card b{font-size:15px;margin-bottom:4px}
+.wait-card p{color:var(--muted);font-size:12.5px;margin:0;line-height:1.5}
 .spin.lg{width:20px;height:20px;border-width:2.5px;margin:0}
 
 /* place name & favourites */
@@ -473,6 +477,11 @@ h1,h2,h3,.place-name{font-weight:800!important}
 </div>
 <div id="toasts"></div>
 <div class="handoff" id="handoff"><div class="handoff-card"><span class="spin lg"></span><div><b id="handoffTitle"></b><div id="handoffText"></div></div></div></div>
+<div class="handoff" id="loginWait"><div class="handoff-card wait-card">
+  <span class="spin lg"></span>
+  <div><b>Waiting for sign-in</b><p>Finish signing in to Roblox in the window that opened. This closes itself once you're in.</p></div>
+  <button class="btn ghost sm" id="loginCancel">Cancel</button>
+</div></div>
 
 <script>
 'use strict';
@@ -551,6 +560,7 @@ const theme = {
     root.style.setProperty('--silver2', mix(a, this.isLight() ? '#ffffff' : '#000000', 0.28));
     root.style.setProperty('--accent-ink', light ? '#101114' : '#ffffff');
     root.style.setProperty('color-scheme', this.isLight() ? 'light' : 'dark');
+    if (typeof syncFrame === 'function') syncFrame();
   },
   set(base, accent, custom) {
     if (base) { this.base = base; store.set('vmt.theme', base); }
@@ -643,12 +653,22 @@ let lastClickId = null;
 let dragging = null;
 let pendingState = null;
 let placeTimer = 0;
+let loginWaitDismissed = false;
 const sel = new Set();
 
 function send(cmd, data) {
   const msg = Object.assign({ cmd }, data || {});
   if (DEMO) return demoHandle(msg);
   window.chrome.webview.postMessage(JSON.stringify(msg));
+}
+
+// Push the current theme's frame colours to the native window so the Windows
+// caption bar (min/max/close) matches instead of staying its start-up colour.
+function syncFrame() {
+  if (DEMO || !(window.chrome && window.chrome.webview)) return;
+  const cs = getComputedStyle(document.documentElement);
+  const v = k => cs.getPropertyValue(k).trim();
+  send('frame', { bg: v('--top-bg'), text: v('--text'), border: v('--line2') });
 }
 
 /* ---------- state ---------- */
@@ -679,6 +699,8 @@ function renderTop() {
   m.classList.toggle('on', !!S.multi);
   m.title = S.multi ? 'Multi Instance is on. Click to turn it off.' : 'Allow several Roblox clients at once (needs admin)';
   $('#btnLogin').disabled = !!S.loginBusy;
+  if (!S.loginBusy) loginWaitDismissed = false;
+  $('#loginWait').classList.toggle('show', !!S.loginBusy && !loginWaitDismissed);
 }
 
 function renderPlace() {
@@ -1328,7 +1350,12 @@ $('#btnSavedPs').onclick = e => openPopover(e.currentTarget, pop => {
   inp.onkeydown = ev => { if (ev.key === 'Enter') save(); };
 }, { width: 310, alignRight: true });
 
-$('#btnLogin').onclick = () => send('login');
+$('#btnLogin').onclick = () => { loginWaitDismissed = false; send('login'); if (S) { $('#loginWait').classList.add('show'); } };
+$('#loginCancel').onclick = () => {
+  loginWaitDismissed = true;
+  $('#loginWait').classList.remove('show');
+  toast('info', 'Close the Roblox sign-in window to cancel.');
+};
 $('#btnPaste').onclick = pasteModal;
 $('#btnFile').onclick = () => send('loadFile');
 
@@ -1437,6 +1464,7 @@ if (!DEMO) {
   });
 }
 send('ready');
+syncFrame();
 // Failsafe: never trap the user behind the loader if state is slow to arrive.
 setTimeout(() => { document.body.classList.add('ready'); hideLoader(); }, 6000);
 </script>

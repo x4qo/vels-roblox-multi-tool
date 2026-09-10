@@ -30,6 +30,7 @@
 static const wchar_t* kAppOrigin = L"https://vels.example/";
 static const wchar_t* kWindowTitle = L"Vels Multi Tool";
 static const COLORREF kBgColor = RGB(11, 12, 14);
+static COLORREF g_clientBg = kBgColor;
 static const UINT_PTR kStateTimer = 1;
 
 static const IID IID_EnvCompletedHandler  = { 0x4e8a3389, 0xc9d8, 0x4bd2, { 0xb6, 0xb5, 0x12, 0x4f, 0xee, 0x6c, 0xc1, 0x4d } };
@@ -682,6 +683,23 @@ static void HandlePageMessage(const std::string& text) {
         std::string url = m["url"].str();
         if (url.rfind("https://www.roblox.com/", 0) == 0)
             ShellExecuteW(nullptr, L"open", Widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    } else if (cmd == "frame") {
+        // Recolour the Windows caption bar (min/max/close) to match the theme.
+        auto parseHex = [](const std::string& h) -> COLORREF {
+            if (h.size() != 7 || h[0] != '#') return CLR_INVALID;
+            auto hx = [&](int i) { return (int)strtol(h.substr(i, 2).c_str(), nullptr, 16); };
+            return RGB(hx(1), hx(3), hx(5));
+        };
+        COLORREF cap = parseHex(m["bg"].str()), txt = parseHex(m["text"].str()), bd = parseHex(m["border"].str());
+        if (cap != CLR_INVALID) {
+            DwmSetWindowAttribute(g_hwnd, 35 /* DWMWA_CAPTION_COLOR */, &cap, sizeof(cap));
+            g_clientBg = cap;
+            double l = 0.299 * GetRValue(cap) + 0.587 * GetGValue(cap) + 0.114 * GetBValue(cap);
+            BOOL dark = l < 140 ? TRUE : FALSE;
+            DwmSetWindowAttribute(g_hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+        }
+        if (bd != CLR_INVALID) DwmSetWindowAttribute(g_hwnd, 34 /* DWMWA_BORDER_COLOR */, &bd, sizeof(bd));
+        if (txt != CLR_INVALID) DwmSetWindowAttribute(g_hwnd, 36 /* DWMWA_TEXT_COLOR */, &txt, sizeof(txt));
     }
 
     Tick();
@@ -973,7 +991,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_ERASEBKGND: {
         RECT rc;
         GetClientRect(hwnd, &rc);
-        HBRUSH brush = CreateSolidBrush(kBgColor);
+        HBRUSH brush = CreateSolidBrush(g_clientBg);
         FillRect(reinterpret_cast<HDC>(wParam), &rc, brush);
         DeleteObject(brush);
         return 1;
