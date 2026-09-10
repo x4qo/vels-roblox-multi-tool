@@ -23,6 +23,7 @@
 #include <regex>
 #include <set>
 #include <functional>
+#include <algorithm>
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "iphlpapi.lib")
@@ -33,6 +34,7 @@ namespace backend {
 
 std::mutex logMutex;
 std::vector<LogEntry> logLines;
+long long logTotal = 0;
 
 std::atomic<bool> watching{ false };
 std::atomic<int> instanceCount{ 0 };
@@ -54,7 +56,13 @@ static HANDLE g_robloxCookieFileHandle = INVALID_HANDLE_VALUE;
 static HANDLE g_multiRobloxMutex = nullptr;
 
 void Log(const std::string& msg) {
-    (void)msg;
+    std::lock_guard<std::mutex> lock(logMutex);
+    char stamp[16] = "";
+    time_t now = std::time(nullptr);
+    if (std::tm* t = std::localtime(&now)) strftime(stamp, sizeof(stamp), "%H:%M:%S", t);
+    logLines.push_back({ stamp, msg });
+    ++logTotal;
+    if (logLines.size() > 400) logLines.erase(logLines.begin(), logLines.begin() + 100);
 }
 
 void ClearLog() {
@@ -804,10 +812,44 @@ bool RobloxCookieFileHasData() {
     return std::filesystem::exists(path, ec) && !ec && std::filesystem::file_size(path, ec) > 0 && !ec;
 }
 
+// Bloxstrap and Fishstrap keep their own Roblox installs, each with its own
+// RobloxCookies.dat and WebView2 cookie databases separate from the stock client.
+static void ClearBootstrapperCookies() {
+    const char* localAppData = std::getenv("LOCALAPPDATA");
+    if (!localAppData) return;
+
+    RunCaptureOutput(L"taskkill", L"/F /T /IM Bloxstrap.exe /IM Fishstrap.exe");
+
+    for (const char* launcher : { "Bloxstrap", "Fishstrap" }) {
+        std::filesystem::path root = std::filesystem::path(localAppData) / launcher;
+        std::error_code ec;
+        if (!std::filesystem::exists(root, ec)) continue;
+
+        int wiped = 0;
+        for (const auto& datPath : findFiles(root, "RobloxCookies.dat")) {
+            std::ofstream f(datPath, std::ios::binary | std::ios::trunc);
+            if (f) ++wiped;
+        }
+
+        int totalRows = 0;
+        for (const auto& cf : findFiles(root, "Cookies")) {
+            int r = deleteRobloxRows(cf, true);
+            if (r > 0) totalRows += r;
+        }
+
+        if (wiped > 0 || totalRows > 0)
+            Log("[v] " + std::string(launcher) + ": cleared " + std::to_string(wiped) +
+                " cookie file(s) and " + std::to_string(totalRows) + " browser row(s).");
+        else
+            Log("[i] " + std::string(launcher) + ": installed, no Roblox cookies found.");
+    }
+}
+
 void ClearRobloxCookieFileAndBrowsers() {
     Log("[i] Starting cookie cleanup...");
     ClearRobloxCookieFile();
     ClearBrowserCookies();
+    ClearBootstrapperCookies();
     Log("[v] Cookie cleanup finished.");
 }
 
@@ -1350,11 +1392,12 @@ static void SchedulePostLaunchCookieScrub(const std::string& username) {
 static std::wstring AccountsFilePath() { return g_exeDir + L"\\accounts.dat"; }
 static constexpr char kAccountsFileMagicV2[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '2' };
 static constexpr char kAccountsFileMagicV3[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '3' };
+static constexpr char kAccountsFileMagicV4[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '4' };
 
 void SaveAccounts() {
     std::lock_guard<std::mutex> lock(accountsMutex);
     std::string buf;
-    buf.append(kAccountsFileMagicV3, sizeof(kAccountsFileMagicV3));
+    buf.append(kAccountsFileMagicV4, sizeof(kAccountsFileMagicV4));
     uint32_t count = (uint32_t)accounts.size();
     buf.append((const char*)&count, sizeof(count));
     for (auto& a : accounts) {
@@ -1371,6 +1414,7 @@ void SaveAccounts() {
         uint32_t alen = (uint32_t)a.alias.size();
         buf.append((const char*)&alen, sizeof(alen));
         buf.append(a.alias);
+        buf.push_back(a.priority ? 1 : 0);
     }
 
     DATA_BLOB dataIn = { (DWORD)buf.size(), (BYTE*)buf.data() };
@@ -1405,8 +1449,12 @@ void LoadAccounts() {
 
     std::vector<RobloxAccount> loaded;
     size_t pos = 0;
-    bool hasPassword = false, hasAlias = false;
-    if (buf.size() >= sizeof(kAccountsFileMagicV3) &&
+    bool hasPassword = false, hasAlias = false, hasPriority = false;
+    if (buf.size() >= sizeof(kAccountsFileMagicV4) &&
+        memcmp(buf.data(), kAccountsFileMagicV4, sizeof(kAccountsFileMagicV4)) == 0) {
+        hasPassword = hasAlias = hasPriority = true;
+        pos = sizeof(kAccountsFileMagicV4);
+    } else if (buf.size() >= sizeof(kAccountsFileMagicV3) &&
         memcmp(buf.data(), kAccountsFileMagicV3, sizeof(kAccountsFileMagicV3)) == 0) {
         hasPassword = true;
         hasAlias = true;
@@ -1415,6 +1463,11 @@ void LoadAccounts() {
         memcmp(buf.data(), kAccountsFileMagicV2, sizeof(kAccountsFileMagicV2)) == 0) {
         hasPassword = true;
         pos = sizeof(kAccountsFileMagicV2);
+    }
+
+    if (!hasPriority) {
+        std::error_code bec;
+        std::filesystem::copy_file(path, path + L".v3.bak", std::filesystem::copy_options::skip_existing, bec);
     }
 
     auto readU32 = [&](uint32_t& v) -> bool {
@@ -1450,6 +1503,11 @@ void LoadAccounts() {
             uint32_t alen = 0;
             if (!readU32(alen) || pos + alen > buf.size()) break;
             a.alias = buf.substr(pos, alen); pos += alen;
+        }
+
+        if (hasPriority) {
+            if (pos + 1 > buf.size()) break;
+            a.priority = buf[pos] != 0; pos += 1;
         }
 
         loaded.push_back(std::move(a));
@@ -1533,6 +1591,39 @@ void SetAccountAlias(int index, const std::string& alias) {
     }
     SaveAccounts();
     Log("[v] Saved alias for " + accountName);
+}
+
+// Priority accounts always form a block at the top of the list. A drop takes
+// the priority of the block it lands inside, so reordering never breaks that.
+void MoveAccount(int from, int to) {
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        int n = (int)accounts.size();
+        if (from < 0 || from >= n || to < 0 || to >= n || from == to) return;
+        RobloxAccount moved = std::move(accounts[from]);
+        accounts.erase(accounts.begin() + from);
+        accounts.insert(accounts.begin() + to, std::move(moved));
+        bool abovePriority = to > 0 && accounts[to - 1].priority;
+        bool belowPriority = to + 1 < n && accounts[to + 1].priority;
+        if (belowPriority) accounts[to].priority = true;
+        else if (to > 0 && !abovePriority) accounts[to].priority = false;
+    }
+    SaveAccounts();
+}
+
+void SetAccountPriority(int index, bool priority) {
+    std::string accountName;
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        if (index < 0 || index >= (int)accounts.size()) return;
+        if (accounts[index].priority == priority) return;
+        accounts[index].priority = priority;
+        accountName = accounts[index].username;
+        std::stable_partition(accounts.begin(), accounts.end(),
+            [](const RobloxAccount& a) { return a.priority; });
+    }
+    SaveAccounts();
+    Log(priority ? "[v] Prioritised " + accountName + "." : "[i] Removed priority from " + accountName + ".");
 }
 
 static void LaunchAccountInternal(int index, long long placeId, const std::string& linkCode) {
@@ -1639,6 +1730,103 @@ void OpenAccountWeb(int index) {
     Log("[i] Opening web session for " + account.username + "...");
     login::OpenAccountWebSession(g_exeDir, account.cookie, account.userId, account.username);
     AddActivity("Opened Web", account.username);
+}
+
+static bool LaunchRobloxClientDirect(const std::string& ticket) {
+    std::wstring exe = FindRobloxPlayerExe();
+    if (exe.empty()) return false;
+    std::wstring cmd = L"\"" + exe + L"\" --app -t " + Widen(ticket);
+    std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back(0);
+    std::wstring workDir = std::filesystem::path(exe).parent_path().wstring();
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, 0, nullptr, workDir.c_str(), &si, &pi))
+        return false;
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return true;
+}
+
+// Opens the Roblox app on the home screen, signed in as this account. Because
+// the tool keeps RobloxCookies.dat locked, the client can only authenticate
+// from an auth ticket, so a plain launch would land on the login screen.
+void LaunchAccountClient(int index) {
+    RobloxAccount account;
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        if (index < 0 || index >= (int)accounts.size()) { Log("[!] Select an account first."); return; }
+        account = accounts[index];
+    }
+
+    ScrubAndLockRobloxCookieFile(("before client launch for " + account.username).c_str(), false);
+
+    std::string ticket = GetAuthTicket(account.cookie);
+    if (ticket.empty()) {
+        Log("[!] Could not sign " + account.username + " in - the saved cookie may have expired. Re-add the account.");
+        ScrubAndLockRobloxCookieFile(("after failed client launch for " + account.username).c_str(), false);
+        return;
+    }
+
+    std::mt19937 rng((unsigned)std::chrono::steady_clock::now().time_since_epoch().count());
+    std::uniform_int_distribution<int> dist(100000, 999999);
+    std::string browserTrackerId = std::to_string(dist(rng)) + std::to_string(dist(rng));
+    long long launchTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    std::string uri = "roblox-player:1+launchmode:app+gameinfo:" + ticket +
+        "+launchtime:" + std::to_string(launchTime) +
+        "+browsertrackerid:" + browserTrackerId +
+        "+robloxLocale:en_us+gameLocale:en_us+channel:+LaunchExp:InApp";
+
+    bool pinnedBuild;
+    { std::lock_guard<std::mutex> lock(robloxBuildMutex); pinnedBuild = !robloxBuild.activeVersion.empty(); }
+
+    bool launched = false;
+    if (pinnedBuild) {
+        launched = LaunchRobloxClientDirect(ticket);
+    } else {
+        int beforeCount = (int)FindPidsByName(L"RobloxPlayerBeta.exe").size();
+        std::wstring wuri(uri.begin(), uri.end());
+        HINSTANCE r = ShellExecuteW(nullptr, L"open", wuri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        launched = (INT_PTR)r > 32 && WaitForRobloxProcessCountAbove(beforeCount, 5000);
+        if (!launched) launched = LaunchRobloxClientDirect(ticket);
+    }
+
+    if (!launched) {
+        Log("[!] Could not open the Roblox client for " + account.username + ".");
+        ScrubAndLockRobloxCookieFile(("after failed client launch for " + account.username).c_str(), false);
+        return;
+    }
+
+    Log("[v] Opened the Roblox client signed in as " + account.username + ".");
+    AddActivity("Opened Roblox client", account.username);
+    SchedulePostLaunchCookieScrub(account.username);
+}
+
+void LaunchRobloxClient() {
+    std::wstring exe = FindRobloxPlayerExe();
+    if (!exe.empty()) {
+        std::wstring cmd = L"\"" + exe + L"\" --app";
+        std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
+        cmdBuf.push_back(0);
+        std::wstring workDir = std::filesystem::path(exe).parent_path().wstring();
+        STARTUPINFOW si = {};
+        si.cb = sizeof(si);
+        PROCESS_INFORMATION pi = {};
+        if (CreateProcessW(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, 0, nullptr, workDir.c_str(), &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            Log("[v] Opened the Roblox client.");
+            AddActivity("Opened Roblox client", "");
+            return;
+        }
+    }
+
+    HINSTANCE r = ShellExecuteW(nullptr, L"open", L"roblox-player:1+launchmode:app", nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)r <= 32) Log("[!] Could not find a Roblox client. Install Roblox or download a build first.");
+    else Log("[v] Opened the Roblox client.");
 }
 
 static bool ParseIsoDate(const std::string& iso, int& year, int& month, int& day) {
@@ -1781,11 +1969,10 @@ void FetchAccountAvatar(int index) {
 void FetchPlaceInfo(long long placeId, const std::string& cookie) {
     if (placeId <= 0) return;
 
-    std::string name;
-    long long visits = -1, favorites = -1, universeId = 0, playing = -1, maxPlayers = -1;
+    std::string name, gameName, creator;
+    long long visits = -1, favorites = -1, universeId = 0, playing = -1, maxPlayers = -1, rootPlaceId = 0;
     std::vector<unsigned char> icon;
 
-    std::string creator;
     HttpResponse detailsResp = HttpRequest(L"games.roblox.com",
         L"/v1/games/multiget-place-details?placeIds=" + std::to_wstring(placeId), L"GET", cookie, {}, "");
     if (detailsResp.ok && detailsResp.status == 200) {
@@ -1794,10 +1981,22 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
         universeId = ExtractJsonLongField(detailsResp.body, "universeId");
     }
 
+    // Place details need a cookie; the universe lookup works without one.
+    if (universeId <= 0) {
+        HttpResponse uniResp = HttpRequest(L"apis.roblox.com",
+            L"/universes/v1/places/" + std::to_wstring(placeId) + L"/universe", L"GET", "", {}, "");
+        if (uniResp.ok && uniResp.status == 200) universeId = ExtractJsonLongField(uniResp.body, "universeId");
+    }
+
     if (universeId > 0) {
         std::wstring uid = std::to_wstring(universeId);
         HttpResponse gamesResp = HttpRequest(L"games.roblox.com", L"/v1/games?universeIds=" + uid, L"GET", "", {}, "");
         if (gamesResp.ok && gamesResp.status == 200) {
+            rootPlaceId = ExtractJsonLongField(gamesResp.body, "rootPlaceId");
+            gameName = ExtractJsonStringField(gamesResp.body, "name");
+            size_t creatorPos = gamesResp.body.find("\"creator\":");
+            if (creator.empty() && creatorPos != std::string::npos)
+                creator = ExtractJsonStringField(gamesResp.body.substr(creatorPos), "name");
             visits = ExtractJsonLongField(gamesResp.body, "visits");
             playing = ExtractJsonLongField(gamesResp.body, "playing");
             maxPlayers = ExtractJsonLongField(gamesResp.body, "maxPlayers");
@@ -1805,19 +2004,32 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
 
         HttpResponse favResp = HttpRequest(L"games.roblox.com", L"/v1/games/" + uid + L"/favorites/count", L"GET", "", {}, "");
         if (favResp.ok && favResp.status == 200) favorites = ExtractJsonLongField(favResp.body, "favoritesCount");
+
+        // Sub-places don't have an icon of their own, so show the parent game's.
+        HttpResponse gameIconResp = HttpRequest(L"thumbnails.roblox.com",
+            L"/v1/games/icons?universeIds=" + uid + L"&size=512x512&format=Png&isCircular=false", L"GET", "", {}, "");
+        if (gameIconResp.ok && gameIconResp.status == 200) {
+            std::string imageUrl = ExtractJsonStringField(gameIconResp.body, "imageUrl");
+            if (!imageUrl.empty()) icon = DownloadBinary(imageUrl);
+        }
     }
 
-    HttpResponse iconResp = HttpRequest(L"thumbnails.roblox.com",
-        L"/v1/places/gameicons?placeIds=" + std::to_wstring(placeId) + L"&size=150x150&format=png&isCircular=false",
-        L"GET", "", {}, "");
-    if (iconResp.ok && iconResp.status == 200) {
-        std::string imageUrl = ExtractJsonStringField(iconResp.body, "imageUrl");
-        if (!imageUrl.empty()) icon = DownloadBinary(imageUrl);
+    if (icon.empty()) {
+        HttpResponse iconResp = HttpRequest(L"thumbnails.roblox.com",
+            L"/v1/places/gameicons?placeIds=" + std::to_wstring(placeId) + L"&size=150x150&format=png&isCircular=false",
+            L"GET", "", {}, "");
+        if (iconResp.ok && iconResp.status == 200) {
+            std::string imageUrl = ExtractJsonStringField(iconResp.body, "imageUrl");
+            if (!imageUrl.empty()) icon = DownloadBinary(imageUrl);
+        }
     }
 
     std::lock_guard<std::mutex> lock(placeInfoMutex);
     placeInfo.placeId = placeId;
-    placeInfo.name = name.empty() ? ("Place " + std::to_string(placeId)) : name;
+    placeInfo.rootPlaceId = rootPlaceId;
+    placeInfo.isSubPlace = rootPlaceId > 0 && rootPlaceId != placeId;
+    placeInfo.placeName = name;
+    placeInfo.name = !gameName.empty() ? gameName : (!name.empty() ? name : "Place " + std::to_string(placeId));
     placeInfo.creator = creator;
     placeInfo.visits = visits;
     placeInfo.favorites = favorites;
@@ -1856,7 +2068,7 @@ static std::wstring PlacesFilePath() { return g_exeDir + L"\\places.dat"; }
 static void WriteSavedPlacesLocked() {
     std::ofstream f(PlacesFilePath().c_str(), std::ios::trunc);
     if (!f) return;
-    for (const auto& p : savedPlaces) f << p.id << ' ' << p.name << '\n';
+    for (const auto& p : savedPlaces) f << p.id << ' ' << (p.favorite ? "+fav " : "") << p.name << '\n';
 }
 
 void LoadSavedPlaces() {
@@ -1874,7 +2086,12 @@ void LoadSavedPlaces() {
             size_t b = name.find_first_not_of(" \t\r");
             size_t e = name.find_last_not_of(" \t\r");
             name = (b == std::string::npos) ? std::string() : name.substr(b, e - b + 1);
-            savedPlaces.push_back({ id, name });
+            bool favorite = false;
+            if (name == "+fav" || name.rfind("+fav ", 0) == 0) {
+                favorite = true;
+                name = name.size() > 5 ? name.substr(5) : std::string();
+            }
+            savedPlaces.push_back({ id, name, favorite });
         }
     }
     if (savedPlaces.empty()) {
@@ -1906,6 +2123,13 @@ void RemoveSavedPlace(long long id) {
         if (savedPlaces[i].id == id) { savedPlaces.erase(savedPlaces.begin() + i); break; }
     }
     WriteSavedPlacesLocked();
+}
+
+void SetSavedPlaceFavorite(long long id, bool favorite) {
+    std::lock_guard<std::mutex> lock(savedPlacesMutex);
+    for (auto& p : savedPlaces) {
+        if (p.id == id) { p.favorite = favorite; WriteSavedPlacesLocked(); return; }
+    }
 }
 
 std::mutex activePrivateServerMutex;
