@@ -32,6 +32,9 @@ static const wchar_t* kWindowTitle = L"Vels Multi Tool";
 static const COLORREF kBgColor = RGB(11, 12, 14);
 static COLORREF g_clientBg = kBgColor;
 static const UINT_PTR kStateTimer = 1;
+static const UINT_PTR kRevealTimer = 4;
+static bool g_webviewShown = false;
+static void RevealWebView();
 
 static const IID IID_EnvCompletedHandler  = { 0x4e8a3389, 0xc9d8, 0x4bd2, { 0xb6, 0xb5, 0x12, 0x4f, 0xee, 0x6c, 0xc1, 0x4d } };
 static const IID IID_CtrlCompletedHandler = { 0x6c4819f3, 0xc9b7, 0x4260, { 0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c } };
@@ -419,6 +422,7 @@ static void HandlePageMessage(const std::string& text) {
     if (cmd == "ready") {
         g_pageReady = true;
         g_lastState.clear();
+        RevealWebView();
         if (g_handoffFrom && !g_handoffDone) SetTimer(g_hwnd, kHandoffTimer, 350, nullptr);
         { std::lock_guard<std::mutex> lock(backend::logMutex); g_logSeen = backend::logTotal; }
         static bool weaoKicked = false;
@@ -781,9 +785,19 @@ static void ShowWebViewFailure(HRESULT hr) {
     PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
 }
 
+// Keep the WebView hidden until the page has painted its loader, so the first
+// thing on screen is the loading screen, not a bare/flashing browser surface.
+static void RevealWebView() {
+    if (g_webviewShown || !g_controller) return;
+    g_webviewShown = true;
+    KillTimer(g_hwnd, kRevealTimer);
+    g_controller->put_IsVisible(TRUE);
+}
+
 static void OnControllerCreated(ICoreWebView2Controller* controller) {
     g_controller = controller;
     g_controller->AddRef();
+    g_controller->put_IsVisible(FALSE);
     g_controller->get_CoreWebView2(&g_webview);
 
     ICoreWebView2Controller2* controller2 = nullptr;
@@ -840,6 +854,8 @@ static void OnControllerCreated(ICoreWebView2Controller* controller) {
     newWindowHandler->Release();
 
     g_webview->Navigate((std::wstring(kAppOrigin) + L"index.html").c_str());
+    // Failsafe: reveal even if the page never sends 'ready'.
+    SetTimer(g_hwnd, kRevealTimer, 4000, nullptr);
 }
 
 using CreateEnvironmentFn = HRESULT(STDAPICALLTYPE*)(PCWSTR, PCWSTR, ICoreWebView2EnvironmentOptions*,
@@ -937,7 +953,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg) {
     case WM_SIZE:
         ResizeWebView();
-        if (g_controller) g_controller->put_IsVisible(wParam != SIZE_MINIMIZED);
+        if (g_controller && g_webviewShown) g_controller->put_IsVisible(wParam != SIZE_MINIMIZED);
         return 0;
     case WM_MOVE:
     case WM_MOVING:
@@ -973,6 +989,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             if (IsWindow(g_handoffFrom)) PostMessageW(g_handoffFrom, WM_CLOSE, 0, 0);
         } else if (wParam == kRetireFailsafeTimer) {
             DestroyWindow(hwnd);
+        } else if (wParam == kRevealTimer) {
+            RevealWebView();
         }
         return 0;
     case kMsgElevateResult:
