@@ -312,15 +312,7 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .theme-opt{position:relative}
 .theme-opt input[type=color]{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;border:0}
 .theme-sw{width:22px;height:22px;border-radius:6px;flex:none;border:1px solid #ffffff1a;position:relative;overflow:hidden}
-.theme-sw::after{content:"";position:absolute;right:0;top:0;width:9px;height:100%;background:var(--sw-accent)}
 .theme-opt .t{font-size:12px;font-weight:700}
-.accent-row{display:flex;gap:8px;padding:8px 6px;flex-wrap:wrap}
-.accent-sw{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;box-shadow:inset 0 0 0 1px #ffffff22;position:relative}
-.accent-sw.on{border-color:var(--text)}
-.accent-sw.on::after{content:"";position:absolute;inset:0;display:grid}
-.accent-sw.custom{display:grid;place-items:center;background:conic-gradient(from 0deg,#f06b6b,#f2b552,#43d18f,#6fa8ff,#b98cff,#f06b6b);color:#fff;overflow:hidden}
-.accent-sw.custom input{position:absolute;inset:0;opacity:0;cursor:pointer;padding:0;border:0}
-.accent-sw.custom .i{width:13px;height:13px;color:#fff;filter:drop-shadow(0 1px 1px #0008)}
 .pop-form{display:flex;gap:6px;padding:4px}
 .pop-form .field{height:30px}
 
@@ -514,9 +506,7 @@ const THEMES = {
     '--text': '#22252b', '--soft': '#4a4f59', '--muted': '#6f7480', '--dim': '#9a9ea8',
     '--top-bg': '#f6f4f0', '--toolbar-bg': '#efece7', '--brand-bg': '#e7e4dd', '--sk-bg': '#e4e1d9' } }
 };
-const ACCENTS = {
-  silver: '#eef0f4', blue: '#5a8dff', violet: '#a98bff', green: '#3fcf8e', amber: '#f2b552', rose: '#ff7597', cyan: '#48c6d9'
-};
+const ACCENT = '#eef0f4';
 const hex2rgb = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(c => c + c).join(''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
 const rgb2hex = ([r, g, b]) => '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
 const mix = (a, b, t) => rgb2hex(hex2rgb(a).map((v, i) => v + (hex2rgb(b)[i] - v) * t));
@@ -545,7 +535,7 @@ const store = {
 const RAMP_KEYS = ['--bg', '--bg2', '--panel', '--panel2', '--hover', '--line', '--line2', '--text', '--soft', '--muted', '--dim', '--top-bg', '--toolbar-bg', '--brand-bg', '--sk-bg'];
 const theme = {
   base: store.get('vmt.theme', 'graphite'),
-  accent: store.get('vmt.accent', '#eef0f4'),
+  accent: ACCENT,
   custom: store.get('vmt.custom', '#141824'),
   vars() {
     if (this.base === 'custom') return customVars(this.custom);
@@ -562,9 +552,8 @@ const theme = {
     root.style.setProperty('color-scheme', this.isLight() ? 'light' : 'dark');
     if (typeof syncFrame === 'function') syncFrame();
   },
-  set(base, accent, custom) {
+  set(base, custom) {
     if (base) { this.base = base; store.set('vmt.theme', base); }
-    if (accent) { this.accent = accent; store.set('vmt.accent', accent); }
     if (custom) { this.custom = custom; this.base = 'custom'; store.set('vmt.custom', custom); store.set('vmt.theme', 'custom'); }
     this.apply();
   }
@@ -1198,24 +1187,18 @@ $('#btnSettings').onclick = e => openPopover(e.currentTarget, pop => {
   const build = () => {
     pop.innerHTML = `<div class="pop-head">Theme</div>
       <div class="theme-grid">${Object.entries(THEMES).map(([k, t]) =>
-        `<button class="theme-opt${k === theme.base ? ' on' : ''}" data-theme="${k}" style="--sw-accent:${theme.accent}">
+        `<button class="theme-opt${k === theme.base ? ' on' : ''}" data-theme="${k}">
           <span class="theme-sw" style="background:${t.sw}"></span><span class="t">${t.name}</span></button>`).join('')}
         <label class="theme-opt${theme.base === 'custom' ? ' on' : ''}" title="Pick your own background colour">
           <span class="theme-sw" style="background:${theme.custom}"></span><span class="t">Custom</span>
-          <input type="color" data-custom value="${isHex(theme.custom) ? theme.custom : '#141824'}"></label></div>
-      <div class="sep"></div><div class="pop-head">Accent</div>
-      <div class="accent-row">${Object.entries(ACCENTS).map(([k, c]) =>
-        `<button class="accent-sw${c.toLowerCase() === theme.accent.toLowerCase() ? ' on' : ''}" data-accent="${c}" style="background:${c}" title="${k}"></button>`).join('')}
-        <label class="accent-sw custom" title="Custom accent colour">${icon('palette')}<input type="color" data-accent-input value="${isHex(theme.accent) ? theme.accent : '#eef0f4'}"></label></div>`;
+          <input type="color" data-custom value="${isHex(theme.custom) ? theme.custom : '#141824'}"></label></div>`;
   };
   build();
   pop.addEventListener('click', ev => {
-    const t = ev.target.closest('[data-theme]'), a = ev.target.closest('[data-accent]');
-    if (t && !ev.target.closest('[data-custom]')) { theme.set(t.dataset.theme, null); build(); }
-    else if (a) { theme.set(null, a.dataset.accent); build(); }
+    const t = ev.target.closest('[data-theme]');
+    if (t && !ev.target.closest('[data-custom]')) { theme.set(t.dataset.theme); build(); }
   });
-  pop.querySelector('[data-custom]').addEventListener('input', ev => { theme.set(null, null, ev.target.value); });
-  pop.querySelector('[data-accent-input]').addEventListener('input', ev => theme.set(null, ev.target.value));
+  pop.querySelector('[data-custom]').addEventListener('input', ev => { theme.set(null, ev.target.value); build(); });
 }, { width: 280, alignRight: true });
 
 $('#btnMulti').onclick = () => {
