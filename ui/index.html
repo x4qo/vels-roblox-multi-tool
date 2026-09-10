@@ -139,18 +139,15 @@ body.ready #app{opacity:1}
 /* loading screen */
 #loader{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:var(--bg);transition:opacity .4s ease,visibility .4s}
 #loader.gone{opacity:0;visibility:hidden}
-.load-mark{width:88px;height:88px;border-radius:22px;background:var(--brand-bg);border:1px solid var(--line2);display:grid;place-items:center;position:relative;animation:load-bob 2.4s ease-in-out infinite}
-.load-mark img{width:56px;height:56px;filter:drop-shadow(0 2px 6px #000a)}
-.load-mark::after{content:"";position:absolute;inset:-1px;border-radius:22px;padding:2px;background:conic-gradient(from var(--a,0deg),transparent 55%,var(--silver1) 88%,transparent 100%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:load-spin 1.1s linear infinite}
-@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
-@keyframes load-spin{to{--a:360deg}}
-@keyframes load-bob{50%{transform:translateY(-6px)}}
-.load-title{font-size:17px;font-weight:800;letter-spacing:-.01em;margin-bottom:-10px}
-.load-sub{color:var(--muted);font-size:12.5px}
-.load-bar{width:180px;height:4px;border-radius:3px;background:var(--sk-bg);overflow:hidden;position:relative}
-.load-bar i{position:absolute;top:0;left:-40%;width:40%;height:100%;border-radius:3px;background:var(--silver1);animation:load-slide 1.2s cubic-bezier(.5,.1,.4,.9) infinite}
-@keyframes load-slide{0%{left:-40%}100%{left:100%}}
-@media (prefers-reduced-motion:reduce){.load-mark,.load-mark::after,.load-bar i{animation:none}}
+.load-mark{width:82px;height:82px;border-radius:20px;background:var(--brand-bg);border:1px solid var(--line2);display:grid;place-items:center;position:relative;animation:load-bob 2.6s ease-in-out infinite}
+.load-mark img{width:52px;height:52px;filter:drop-shadow(0 2px 6px #000a)}
+@keyframes load-bob{50%{transform:translateY(-5px)}}
+.load-dots{display:flex;gap:7px}
+.load-dots span{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:load-dot 1s ease-in-out infinite}
+.load-dots span:nth-child(2){animation-delay:.15s}
+.load-dots span:nth-child(3){animation-delay:.3s}
+@keyframes load-dot{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.load-mark,.load-dots span{animation:none}}
 .btn.toggle .sw,.btn.toggle .sw::after{transition:all .25s cubic-bezier(.3,.7,.3,1)}
 .btn.toggle{transition:background .25s,border-color .25s,color .25s}
 .handoff{position:fixed;inset:0;z-index:90;background:#0b0c0ecc;backdrop-filter:blur(6px);display:grid;place-items:center;opacity:0;pointer-events:none;transition:opacity .25s ease}
@@ -352,11 +349,7 @@ h1,h2,h3,.place-name{font-weight:800!important}
 <body>
 <div id="loader">
   <div class="load-mark"><img id="loaderImg" alt=""></div>
-  <div style="text-align:center;display:flex;flex-direction:column;gap:16px;align-items:center">
-    <div><div class="load-title">Vels Multi Tool</div></div>
-    <div class="load-bar"><i></i></div>
-    <div class="load-sub" id="loaderSub">Starting up…</div>
-  </div>
+  <div class="load-dots"><span></span><span></span><span></span></div>
 </div>
 <div id="app">
   <header class="top">
@@ -666,7 +659,7 @@ function onState(s) {
   if (dragging) { pendingState = s; return; }
   S = s;
   document.body.classList.add('ready');
-  hideLoader();
+  maybeHideLoader();
   const ids = new Set(s.accounts.map(a => a.id));
   for (const id of [...sel]) if (!ids.has(id)) sel.delete(id);
   renderTop();
@@ -1151,6 +1144,7 @@ $('#brandImg').src = brandSrc;
 $('#loaderImg').src = brandSrc;
 
 let loaderGone = false;
+let firstStateAt = 0;
 function hideLoader() {
   if (loaderGone) return;
   loaderGone = true;
@@ -1158,15 +1152,17 @@ function hideLoader() {
   el.classList.add('gone');
   setTimeout(() => el.remove(), 450);
 }
-// Walk the subtitle through the boot phases so a slow start still feels alive.
-let loadStep = 0;
-const loadMsgs = ['Starting up…', 'Loading your accounts…', 'Almost there…'];
-const loadTimer = setInterval(() => {
-  if (loaderGone) return clearInterval(loadTimer);
-  loadStep = Math.min(loadStep + 1, loadMsgs.length - 1);
-  const sub = document.getElementById('loaderSub');
-  if (sub) sub.textContent = loadMsgs[loadStep];
-}, 1100);
+// Keep the loader up until the account icons have loaded, so rows don't reveal
+// with letter placeholders that then pop into avatars. Capped so a slow or
+// failed icon never traps the user behind it.
+function maybeHideLoader() {
+  if (loaderGone || !S) return;
+  if (!firstStateAt) {
+    firstStateAt = Date.now();
+    setTimeout(hideLoader, S.accounts.length ? 3500 : 500);  // hard cap on the wait
+  }
+  if (S.accounts.length && S.accounts.every(a => a.avatar)) hideLoader();
+}
 
 function askAdmin(what, multi) {
   confirmModal({
