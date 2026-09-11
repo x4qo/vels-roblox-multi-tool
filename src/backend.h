@@ -116,7 +116,7 @@ std::string GetUptimeString();
 void ClearRobloxCookieFile();
 bool RobloxCookieFileHasData();
 void ClearBrowserCookies();
-void ClearRobloxCookieFileAndBrowsers();
+void ClearRobloxCookieFiles();
 
 extern std::mutex browserCookieMutex;
 extern std::vector<BrowserCookieStatus> browserCookieStatus;

@@ -813,12 +813,11 @@ bool RobloxCookieFileHasData() {
 }
 
 // Bloxstrap and Fishstrap keep their own Roblox installs, each with its own
-// RobloxCookies.dat and WebView2 cookie databases separate from the stock client.
-static void ClearBootstrapperCookies() {
+// RobloxCookies.dat next to the stock client's. Only these Roblox cookie files
+// are wiped - browser cookies are left alone.
+static void ClearBootstrapperCookieFiles() {
     const char* localAppData = std::getenv("LOCALAPPDATA");
     if (!localAppData) return;
-
-    RunCaptureOutput(L"taskkill", L"/F /T /IM Bloxstrap.exe /IM Fishstrap.exe");
 
     for (const char* launcher : { "Bloxstrap", "Fishstrap" }) {
         std::filesystem::path root = std::filesystem::path(localAppData) / launcher;
@@ -830,27 +829,16 @@ static void ClearBootstrapperCookies() {
             std::ofstream f(datPath, std::ios::binary | std::ios::trunc);
             if (f) ++wiped;
         }
-
-        int totalRows = 0;
-        for (const auto& cf : findFiles(root, "Cookies")) {
-            int r = deleteRobloxRows(cf, true);
-            if (r > 0) totalRows += r;
-        }
-
-        if (wiped > 0 || totalRows > 0)
-            Log("[v] " + std::string(launcher) + ": cleared " + std::to_string(wiped) +
-                " cookie file(s) and " + std::to_string(totalRows) + " browser row(s).");
-        else
-            Log("[i] " + std::string(launcher) + ": installed, no Roblox cookies found.");
+        if (wiped > 0) Log("[v] " + std::string(launcher) + ": cleared " + std::to_string(wiped) + " RobloxCookies.dat file(s).");
+        else Log("[i] " + std::string(launcher) + ": installed, no RobloxCookies.dat found.");
     }
 }
 
-void ClearRobloxCookieFileAndBrowsers() {
-    Log("[i] Starting cookie cleanup...");
+void ClearRobloxCookieFiles() {
+    Log("[i] Clearing Roblox cookie files...");
     ClearRobloxCookieFile();
-    ClearBrowserCookies();
-    ClearBootstrapperCookies();
-    Log("[v] Cookie cleanup finished.");
+    ClearBootstrapperCookieFiles();
+    Log("[v] Roblox cookies cleared.");
 }
 
 static std::string generateRandomMac() {
