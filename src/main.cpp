@@ -261,6 +261,7 @@ static std::string BuildStateJson() {
             o += "{\"id\":" + N(a.userId);
             o += ",\"username\":" + Quote(a.username);
             o += ",\"alias\":" + Quote(a.alias);
+            o += ",\"group\":" + Quote(a.group);
             o += std::string(",\"priority\":") + B(a.priority);
             o += std::string(",\"avatar\":") + B(a.avatarLoaded && !a.avatarPng.empty());
             o += std::string(",\"hasPassword\":") + B(!a.password.empty());
@@ -594,6 +595,9 @@ static void HandlePageMessage(const std::string& text) {
     } else if (cmd == "priority") {
         bool value = m["value"].boolean();
         for (long long id : OrderedIds(m["ids"])) backend::SetAccountPriority(IndexOfUser(id), value);
+    } else if (cmd == "setGroup") {
+        std::string group = m["group"].str();
+        for (const auto& v : m["ids"].a) backend::SetAccountGroup(IndexOfUser(v.i64()), group);
     } else if (cmd == "copy") {
         std::string what = m["what"].str();
         std::string uname, pass, cookie;

@@ -1385,11 +1385,12 @@ static std::wstring AccountsFilePath() { return g_exeDir + L"\\accounts.dat"; }
 static constexpr char kAccountsFileMagicV2[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '2' };
 static constexpr char kAccountsFileMagicV3[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '3' };
 static constexpr char kAccountsFileMagicV4[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '4' };
+static constexpr char kAccountsFileMagicV5[8] = { 'V', 'M', 'T', 'A', 'C', 'C', 'T', '5' };
 
 void SaveAccounts() {
     std::lock_guard<std::mutex> lock(accountsMutex);
     std::string buf;
-    buf.append(kAccountsFileMagicV4, sizeof(kAccountsFileMagicV4));
+    buf.append(kAccountsFileMagicV5, sizeof(kAccountsFileMagicV5));
     uint32_t count = (uint32_t)accounts.size();
     buf.append((const char*)&count, sizeof(count));
     for (auto& a : accounts) {
@@ -1407,6 +1408,9 @@ void SaveAccounts() {
         buf.append((const char*)&alen, sizeof(alen));
         buf.append(a.alias);
         buf.push_back(a.priority ? 1 : 0);
+        uint32_t glen = (uint32_t)a.group.size();
+        buf.append((const char*)&glen, sizeof(glen));
+        buf.append(a.group);
     }
 
     DATA_BLOB dataIn = { (DWORD)buf.size(), (BYTE*)buf.data() };
@@ -1441,8 +1445,12 @@ void LoadAccounts() {
 
     std::vector<RobloxAccount> loaded;
     size_t pos = 0;
-    bool hasPassword = false, hasAlias = false, hasPriority = false;
-    if (buf.size() >= sizeof(kAccountsFileMagicV4) &&
+    bool hasPassword = false, hasAlias = false, hasPriority = false, hasGroup = false;
+    if (buf.size() >= sizeof(kAccountsFileMagicV5) &&
+        memcmp(buf.data(), kAccountsFileMagicV5, sizeof(kAccountsFileMagicV5)) == 0) {
+        hasPassword = hasAlias = hasPriority = hasGroup = true;
+        pos = sizeof(kAccountsFileMagicV5);
+    } else if (buf.size() >= sizeof(kAccountsFileMagicV4) &&
         memcmp(buf.data(), kAccountsFileMagicV4, sizeof(kAccountsFileMagicV4)) == 0) {
         hasPassword = hasAlias = hasPriority = true;
         pos = sizeof(kAccountsFileMagicV4);
@@ -1500,6 +1508,12 @@ void LoadAccounts() {
         if (hasPriority) {
             if (pos + 1 > buf.size()) break;
             a.priority = buf[pos] != 0; pos += 1;
+        }
+
+        if (hasGroup) {
+            uint32_t glen = 0;
+            if (!readU32(glen) || pos + glen > buf.size()) break;
+            a.group = buf.substr(pos, glen); pos += glen;
         }
 
         loaded.push_back(std::move(a));
@@ -1583,6 +1597,19 @@ void SetAccountAlias(int index, const std::string& alias) {
     }
     SaveAccounts();
     Log("[v] Saved alias for " + accountName);
+}
+
+void SetAccountGroup(int index, const std::string& group) {
+    std::string accountName;
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        if (index < 0 || index >= (int)accounts.size()) return;
+        accounts[index].group = group;
+        accountName = accounts[index].username;
+    }
+    SaveAccounts();
+    Log(group.empty() ? "[i] Removed " + accountName + " from its group."
+                      : "[v] Added " + accountName + " to \"" + group + "\".");
 }
 
 // Priority accounts always form a block at the top of the list. A drop takes

@@ -262,7 +262,8 @@ b,strong{font-weight:700}
 .acct{display:flex;align-items:center;gap:11px;min-width:0}
 .av{width:34px;height:34px;border-radius:50%;background:#22252b;flex:none;object-fit:cover;border:1px solid var(--line2);display:grid;place-items:center;font-weight:800;font-size:13px;color:var(--muted)}
 .who{min-width:0}
-.nm{font-weight:700;font-size:13.5px;letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm{font-weight:700;font-size:13.5px;letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px;min-width:0}
+.gpill{flex:none;height:17px;padding:0 7px;border-radius:5px;background:#20222a;border:1px solid var(--line2);color:var(--muted);font-size:10px;font-weight:700;display:inline-flex;align-items:center;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .un{color:var(--dim);font-size:11.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .star{width:30px;height:30px;border-radius:8px;border:0;background:none;color:var(--dim);cursor:pointer;display:grid;place-items:center;margin:0 auto;transition:color .12s,background .12s}
 .star:hover{background:var(--hover);color:var(--amber)}
@@ -334,6 +335,24 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .modal textarea:focus{border-color:#80858f;box-shadow:0 0 0 3px #ffffff10}
 .modal .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 .check{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted);cursor:pointer}
+
+/* custom tooltip */
+#tip{position:fixed;z-index:300;pointer-events:none;max-width:250px;padding:6px 10px;border-radius:8px;background:#0a0b0d;border:1px solid var(--line2);color:var(--soft);font-size:11.5px;font-weight:600;line-height:1.42;box-shadow:0 10px 26px -10px #000,0 0 0 1px #00000055;white-space:pre-line;opacity:0;transform:translateY(5px) scale(.94);transform-origin:top center;transition:opacity .14s ease,transform .16s cubic-bezier(.2,.85,.3,1)}
+#tip.show{opacity:1;transform:none}
+#tip.above{transform-origin:bottom center;transform:translateY(-5px) scale(.94)}
+#tip.above.show{transform:none}
+
+/* group filter bar */
+.groupbar{display:flex;align-items:center;gap:6px;padding:0 16px 10px;flex-wrap:wrap}
+.groupbar:empty{display:none}
+.gchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 4px 0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);cursor:pointer;font-size:11.5px;font-weight:700;color:var(--soft);transition:background .12s,border-color .12s}
+.gchip:hover{background:var(--hover);border-color:#3a3e47}
+.gchip.on{border-color:var(--silver1);background:#202228;color:var(--text)}
+.gchip .gc{min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:#00000033;font-size:10.5px;display:inline-grid;place-items:center}
+.gchip .gplay{width:18px;height:18px;border:0;border-radius:5px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+.gchip .gplay:hover{color:var(--green);background:#10201a}
+.gchip .gplay .i{width:12px;height:12px}
+.gchip.all .gc{background:#00000022}
 
 /* toasts */
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:70;pointer-events:none;align-items:flex-end}
@@ -462,9 +481,11 @@ h1,h2,h3,.place-name,.load-title{font-weight:800!important}
         <div class="spacer"></div>
         <span class="selinfo" id="selInfo"></span>
         <button class="btn sm" id="btnPri" data-i="star"><span id="btnPriLbl">Prioritise</span></button>
+        <button class="btn sm" id="btnGroup" data-i="folder">Group</button>
         <button class="btn sm good" id="btnBrowser" data-i="globe">Browser</button>
         <button class="btn sm danger" id="btnDelete" data-i="trash">Delete</button>
       </div>
+      <div class="groupbar" id="groupBar"></div>
       <div class="thead cols">
         <div></div>
         <div><div class="cb" id="cbAll" data-i="check" title="Select all"></div></div>
@@ -624,7 +645,9 @@ const ICONS = {
   shuffle: '<path d="m18 14 4 4-4 4M18 2l4 4-4 4"/><path d="M2 18h1.97a4 4 0 0 0 3.3-1.74l6.46-9.52A4 4 0 0 1 17.03 5H22M2 6h1.97a4 4 0 0 1 3.3 1.74l.52.77M22 18h-4.97a4 4 0 0 1-3.3-1.74l-.52-.77"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
   gauge: '<path d="M12 14a2 2 0 0 0 2-2c0-1.1-2-6-2-6s-2 4.9-2 6a2 2 0 0 0 2 2z"/><path d="M3.5 18a9 9 0 1 1 17 0"/>',
-  rewind: '<path d="M11 19 2 12l9-7v14zM22 19l-9-7 9-7v14z"/>'
+  rewind: '<path d="M11 19 2 12l9-7v14zM22 19l-9-7 9-7v14z"/>',
+  folder: '<path d="M4 5h5l2 2.5h9a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
+  folderPlus: '<path d="M4 5h5l2 2.5h9a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M12 11v5M9.5 13.5h5"/>'
 };
 const icon = (n, extra = '') => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${ICONS[n] || ''}</svg>`;
 
@@ -661,6 +684,7 @@ let dragging = null;
 let pendingState = null;
 let placeTimer = 0;
 let loginWaitDismissed = false;
+let groupFilter = null; // null = all; '' = ungrouped; else group name
 const sel = new Set();
 
 function send(cmd, data) {
@@ -694,7 +718,7 @@ function onState(s) {
   renderNet();
   renderLaunch();
   const key = JSON.stringify(s.accounts);
-  if (key !== accountsKey) { accountsKey = key; renderAccounts(); }
+  if (key !== accountsKey) { accountsKey = key; renderGroups(); renderAccounts(); }
   else updateSelectionUI();
 }
 
@@ -828,10 +852,29 @@ function renderBuild() {
 
 /* ---------- accounts ---------- */
 
+function groupList() {
+  const seen = new Map();
+  for (const a of S.accounts) if (a.group) seen.set(a.group, (seen.get(a.group) || 0) + 1);
+  return [...seen.entries()].sort((x, y) => x[0].localeCompare(y[0]));
+}
 function visibleAccounts() {
   const q = filter.trim().toLowerCase();
-  return S.accounts.map((a, i) => ({ a, i })).filter(({ a }) =>
-    !q || a.username.toLowerCase().includes(q) || a.alias.toLowerCase().includes(q) || String(a.id).includes(q));
+  return S.accounts.map((a, i) => ({ a, i })).filter(({ a }) => {
+    if (groupFilter === '' && a.group) return false;
+    if (groupFilter && a.group !== groupFilter) return false;
+    return !q || a.username.toLowerCase().includes(q) || a.alias.toLowerCase().includes(q) || (a.group || '').toLowerCase().includes(q) || String(a.id).includes(q);
+  });
+}
+function renderGroups() {
+  const groups = groupList();
+  const ungrouped = S.accounts.filter(a => !a.group).length;
+  if (!groups.length) { setHTML($('#groupBar'), ''); groupFilter = null; return; }
+  if (groupFilter && groupFilter !== '' && !groups.some(g => g[0] === groupFilter)) groupFilter = null;
+  let h = `<button class="gchip all${groupFilter == null ? ' on' : ''}" data-g="*">All<span class="gc">${S.accounts.length}</span></button>`;
+  for (const [name, count] of groups)
+    h += `<button class="gchip${groupFilter === name ? ' on' : ''}" data-g="${esc(name)}">${esc(name)}<span class="gc">${count}</span><span class="gplay" data-launch title="Launch everyone in ${esc(name)}">${icon('play')}</span></button>`;
+  if (ungrouped) h += `<button class="gchip${groupFilter === '' ? ' on' : ''}" data-g="">Ungrouped<span class="gc">${ungrouped}</span></button>`;
+  setHTML($('#groupBar'), h);
 }
 const accById = id => S && S.accounts.find(a => a.id === id);
 const orderedSelection = () => S.accounts.filter(a => sel.has(a.id)).map(a => a.id);
@@ -845,7 +888,7 @@ function rowHTML(a, i) {
     <div class="grip" title="Drag to reorder">${icon('grip')}</div>
     <div><div class="cb${on ? ' on' : ''}">${icon('check')}</div></div>
     <div class="ord">${i + 1}</div>
-    <div class="acct">${av}<div class="who"><div class="nm">${esc(name)}</div><div class="un">${a.alias ? '@' + esc(a.username) : 'ID ' + a.id}</div></div></div>
+    <div class="acct">${av}<div class="who"><div class="nm">${esc(name)}${a.group ? `<span class="gpill" title="Group: ${esc(a.group)}">${esc(a.group)}</span>` : ''}</div><div class="un">${a.alias ? '@' + esc(a.username) : 'ID ' + a.id}</div></div></div>
     <div><button class="star${a.priority ? ' on' : ''}" data-act="pri" title="${a.priority ? 'Remove priority' : 'Prioritise: keep at the top and launch first'}">${icon('star')}</button></div>
     <div class="row-act">
       <button class="btn icon sm play" data-act="launch" title="Launch into the current place">${icon('play')}</button>
@@ -886,7 +929,7 @@ function updateSelectionUI() {
   $('#launchCount').textContent = n;
   $('#btnLaunch').disabled = n === 0;
   $('#selInfo').innerHTML = n ? `<b>${n}</b> selected` : '';
-  ['#btnPri', '#btnBrowser', '#btnDelete'].forEach(q => { $(q).disabled = n === 0; });
+  ['#btnPri', '#btnGroup', '#btnBrowser', '#btnDelete'].forEach(q => { $(q).disabled = n === 0; });
   const chosen = S.accounts.filter(a => sel.has(a.id));
   $('#btnPriLbl').textContent = chosen.length && chosen.every(a => a.priority) ? 'Unprioritise' : 'Prioritise';
 }
@@ -936,6 +979,7 @@ function openRowMenu(anchor, id) {
     { icon: 'key', label: 'Copy password', disabled: !a.hasPassword, on: () => send('copy', { id, what: 'password' }) },
     { icon: 'key', label: 'Copy user:pass', disabled: !a.hasPassword, on: () => send('copy', { id, what: 'userpass' }) },
     '-',
+    { icon: 'folder', label: a.group ? `Group: ${a.group}` : 'Add to group', meta: a.group ? '' : '', on: () => groupModal([id]) },
     { icon: 'pencil', label: 'Edit alias & password', on: () => editModal(id) },
     { icon: 'trash', label: 'Remove account', danger: true, on: () => confirmDelete([id]) }
   ], { alignRight: true, width: 220 });
@@ -1021,6 +1065,11 @@ listEl.addEventListener('click', e => {
   toggleRow(id, e.shiftKey);
 });
 listEl.addEventListener('scroll', closePopover);
+// Double-click an account's name to quickly edit its alias.
+listEl.addEventListener('dblclick', e => {
+  const row = e.target.closest('.row');
+  if (row && e.target.closest('.who')) { e.preventDefault(); editModal(+row.dataset.id); }
+});
 // Right-click anywhere on an account row opens its More menu at the cursor.
 listEl.addEventListener('contextmenu', e => {
   const row = e.target.closest('.row');
@@ -1165,6 +1214,31 @@ function renamePlaceModal(id) {
   });
 }
 
+function groupModal(ids) {
+  if (!ids.length) return;
+  const groups = groupList().map(g => g[0]);
+  const cur = ids.length === 1 ? (accById(ids[0]).group || '') : '';
+  const chips = groups.map(g =>
+    `<button class="btn sm${g === cur ? ' primary' : ''}" data-pick="${esc(g)}">${esc(g)}</button>`).join('');
+  const n = ids.length;
+  openModal(`<h3>${n === 1 ? 'Set group' : `Group ${n} accounts`}</h3>
+    <p>Put ${n === 1 ? 'this account' : 'these accounts'} into a group to filter and launch them together.</p>
+    ${groups.length ? `<div class="label">Existing groups</div><div class="row2" style="flex-wrap:wrap;gap:6px">${chips}</div>` : ''}
+    <div class="label">New group</div>
+    <div class="row2"><div class="field">${icon('folderPlus')}<input data-new maxlength="30" spellcheck="false" placeholder="Group name"></div><button class="btn primary" data-add>Add</button></div>
+    <div class="foot"><button class="btn ghost danger" data-none>Remove from group</button><button class="btn ghost" data-x>Close</button></div>`, (m, close) => {
+    const apply = g => { send('setGroup', { ids, group: g }); close(); };
+    m.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => apply(b.dataset.pick));
+    const inp = m.querySelector('[data-new]');
+    const add = () => { const g = inp.value.trim(); if (g) apply(g); else inp.focus(); };
+    m.querySelector('[data-add]').onclick = add;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+    m.querySelector('[data-none]').onclick = () => apply('');
+    m.querySelector('[data-x]').onclick = close;
+    setTimeout(() => inp.focus(), 0);
+  });
+}
+
 function toast(kind, text) {
   const box = $('#toasts');
   const last = box.lastElementChild;
@@ -1175,8 +1249,50 @@ function toast(kind, text) {
   t.innerHTML = icon(kind === 'ok' ? 'ok' : kind === 'err' ? 'alert' : 'info') + `<span>${esc(text)}</span>`;
   box.appendChild(t);
   while (box.children.length > 4) box.firstElementChild.remove();
-  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 220); }, kind === 'err' ? 5500 : 3200);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 220); }, kind === 'err' ? 3000 : 1800);
 }
+
+/* ---------- custom tooltips ---------- */
+// Lazily convert any element's native `title` into an animated custom tooltip,
+// so every existing title="" works with no markup changes.
+const tipEl = document.createElement('div');
+tipEl.id = 'tip';
+document.body.appendChild(tipEl);
+let tipTarget = null, tipTimer = 0;
+function showTip(el) {
+  const text = el.getAttribute('data-tip');
+  if (!text || !el.isConnected) return;
+  tipEl.textContent = text;
+  tipEl.classList.remove('above');
+  tipEl.style.left = '-9999px';
+  tipEl.style.top = '0';
+  tipEl.classList.add('show');
+  const r = el.getBoundingClientRect(), tw = tipEl.offsetWidth, th = tipEl.offsetHeight;
+  let x = r.left + r.width / 2 - tw / 2;
+  x = Math.max(8, Math.min(x, innerWidth - tw - 8));
+  let y = r.bottom + 8;
+  if (y + th > innerHeight - 8) { y = r.top - th - 8; tipEl.classList.add('above'); }
+  tipEl.style.left = x + 'px';
+  tipEl.style.top = y + 'px';
+}
+function hideTip() { tipTarget = null; clearTimeout(tipTimer); tipEl.classList.remove('show'); }
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest('[title],[data-tip]');
+  if (!el) return;
+  if (el.hasAttribute('title')) { el.setAttribute('data-tip', el.getAttribute('title')); el.removeAttribute('title'); }
+  if (el === tipTarget) return;
+  tipTarget = el;
+  clearTimeout(tipTimer);
+  tipEl.classList.remove('show');
+  tipTimer = setTimeout(() => { if (tipTarget === el) showTip(el); }, 380);
+});
+document.addEventListener('mouseout', e => {
+  const el = e.target.closest('[data-tip]');
+  if (el && el === tipTarget) hideTip();
+});
+document.addEventListener('mousedown', hideTip, true);
+window.addEventListener('blur', hideTip);
+document.addEventListener('wheel', hideTip, { capture: true, passive: true });
 function toastFromLog(text) {
   const kind = text.startsWith('[!]') ? 'err' : text.startsWith('[v]') ? 'ok' : 'info';
   toast(kind, text.replace(/^\[[!vi]\]\s*/, ''));
@@ -1426,6 +1542,20 @@ $('#btnPri').onclick = () => {
 };
 $('#btnBrowser').onclick = () => send('browser', { ids: orderedSelection() });
 $('#btnDelete').onclick = () => confirmDelete(orderedSelection());
+$('#btnGroup').onclick = () => groupModal(orderedSelection());
+$('#groupBar').addEventListener('click', e => {
+  const chip = e.target.closest('.gchip');
+  if (!chip) return;
+  const g = chip.dataset.g;
+  if (e.target.closest('[data-launch]')) {
+    const ids = S.accounts.filter(a => a.group === g).map(a => a.id);
+    if (ids.length) send('launch', { ids });
+    return;
+  }
+  groupFilter = g === '*' ? null : g;
+  renderGroups();
+  renderAccounts();
+});
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -1459,7 +1589,7 @@ function demoHandle(msg) {
     const names = ['compr6mised', '3xVale', 'anya2k2a', 'xluvlukee', 'ffwaz123', 'Justincase69426942', 'undav86demedia', 'Hj4457gh0', 'BuzzPinkyy3', 'warrn_plmrs', 'porcupinegood', 'NovaFlux_22', 'quietmarrow', 'SilverTide09', 'emberlynx', 'Kairo_Vex', 'mossy_pebble', 'Lunar_Drift7', 'oakhollow', 'glitchy_rae', 'VelvetStorm', 'pixelnomad44', 'frostbyte_ok', 'Cinder_Ash'];
     demo = {
       type: 'state',
-      accounts: names.map((n, i) => ({ id: 1000 + i * 137, username: n, alias: i === 3 ? 'Main alt' : '', priority: i < 2, avatar: false, hasPassword: i % 3 === 0 })),
+      accounts: names.map((n, i) => ({ id: 1000 + i * 137, username: n, alias: i === 3 ? 'Main alt' : '', group: i < 4 ? 'Mains' : i < 9 ? 'Farm alts' : '', priority: i < 2, avatar: false, hasPassword: i % 3 === 0 })),
       placeId: 10561483644,
       place: { loaded: true, icon: false, isSub: true, rootPlaceId: 10561456271, name: 'Moonlight Creek', placeName: 'Mystic Falls', creator: 'Insidious Game Studios', playing: 854, visits: 42800000, favorites: 148500 },
       savedPlaces: [{ id: 10561483644, name: 'Mystic Falls', favorite: true }, { id: 10561456271, name: 'Moonlight Creek', favorite: true }, { id: 4924922222, name: 'Brookhaven', favorite: false }],
@@ -1477,6 +1607,7 @@ function demoHandle(msg) {
     case 'toggleMulti': demo.multi = !demo.multi; break;
     case 'move': { const from = accs.findIndex(a => a.id === msg.id); if (from >= 0) applyMove(accs, from, msg.to); break; }
     case 'priority': msg.ids.forEach(id => { const a = accs.find(x => x.id === id); if (a) a.priority = msg.value; }); accs.sort((a, b) => b.priority - a.priority); break;
+    case 'setGroup': msg.ids.forEach(id => { const a = accs.find(x => x.id === id); if (a) a.group = msg.group; }); break;
     case 'remove': demo.accounts = accs.filter(a => !msg.ids.includes(a.id)); break;
     default: toast('info', 'Demo: ' + msg.cmd);
   }
