@@ -248,6 +248,10 @@ static std::string BuildStateJson() {
     std::string o;
     o.reserve(8192);
 
+    backend::PruneLaunchedPids();
+    std::map<long long, unsigned long> pidMap;
+    { std::lock_guard<std::mutex> lock(backend::launchedMutex); pidMap = backend::launchedPids; }
+
     o += "{\"type\":\"state\",\"accounts\":[";
     {
         std::lock_guard<std::mutex> lock(backend::accountsMutex);
@@ -262,6 +266,8 @@ static std::string BuildStateJson() {
             o += ",\"username\":" + Quote(a.username);
             o += ",\"alias\":" + Quote(a.alias);
             o += ",\"group\":" + Quote(a.group);
+            auto pit = pidMap.find(a.userId);
+            o += ",\"pid\":" + N(pit == pidMap.end() ? 0 : (long long)pit->second);
             o += std::string(",\"priority\":") + B(a.priority);
             o += std::string(",\"avatar\":") + B(a.avatarLoaded && !a.avatarPng.empty());
             o += std::string(",\"hasPassword\":") + B(!a.password.empty());

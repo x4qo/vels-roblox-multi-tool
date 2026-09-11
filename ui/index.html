@@ -31,20 +31,13 @@ b,strong{font-weight:700}
 ::-webkit-scrollbar-thumb:hover{background-color:#3b3f48}
 ::-webkit-scrollbar-track{background:transparent}
 
-#app{height:100%;display:grid;grid-template-rows:auto auto 1fr}
-
-/* network toolbar */
-.toolbar{display:flex;align-items:center;gap:8px;padding:8px 20px;border-bottom:1px solid var(--line);background:var(--toolbar-bg)}
-.tb-label{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;margin-right:2px}
-.tb-label .i{width:14px;height:14px}
-.adapter{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 8px 0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:12px;max-width:360px;min-width:0}
+#app{height:100%;display:grid;grid-template-rows:auto 1fr}
+.adapter{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 10px 0 12px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:12.5px;min-width:0;font-weight:600}
 .adapter:hover:not(:disabled){border-color:#3a3e47}
-.adapter:disabled{cursor:default}
-.adapter #adapterName{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.adapter .mac{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.adapter .i{width:13px;height:13px;color:var(--dim)}
-.adapter:disabled .chev{display:none}
-.tb-sep{width:1px;height:18px;background:var(--line2);margin:0 4px}
+.adapter:disabled{cursor:default;opacity:.6}
+.adapter #setAdapterName{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
+.adapter .mac{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:auto}
+.adapter .i{width:14px;height:14px;color:var(--dim);flex:none}
 
 /* top bar */
 .top{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--top-bg)}
@@ -264,6 +257,8 @@ b,strong{font-weight:700}
 .who{min-width:0}
 .nm{font-weight:700;font-size:13.5px;letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px;min-width:0}
 .gpill{flex:none;height:17px;padding:0 7px;border-radius:5px;background:#20222a;border:1px solid var(--line2);color:var(--muted);font-size:10px;font-weight:700;display:inline-flex;align-items:center;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pidpill{flex:none;height:17px;padding:0 7px 0 6px;border-radius:5px;background:#0f1c16;border:1px solid #1f5a3f;color:var(--green);font-size:10px;font-weight:700;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.rdot{width:5px;height:5px;border-radius:50%;background:var(--green);box-shadow:0 0 0 2px #43d18f2e}
 .un{color:var(--dim);font-size:11.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .star{width:30px;height:30px;border-radius:8px;border:0;background:none;color:var(--dim);cursor:pointer;display:grid;place-items:center;margin:0 auto;transition:color .12s,background .12s}
 .star:hover{background:var(--hover);color:var(--amber)}
@@ -292,7 +287,7 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .empty.small{min-height:140px;color:var(--muted)}
 
 /* popovers & menus */
-.pop{position:fixed;z-index:50;min-width:210px;max-width:360px;background:#16181d;border:1px solid var(--line2);border-radius:12px;padding:5px;box-shadow:0 22px 48px -14px #000e,0 0 0 1px #00000060;animation:pop .12s ease-out}
+.pop{position:fixed;z-index:80;min-width:210px;max-width:360px;background:#16181d;border:1px solid var(--line2);border-radius:12px;padding:5px;box-shadow:0 22px 48px -14px #000e,0 0 0 1px #00000060;animation:pop .12s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(-4px) scale(.985)}}
 .pop-list{max-height:260px;overflow-y:auto}
 .mi{display:flex;align-items:center;gap:9px;height:32px;padding:0 8px 0 10px;border-radius:8px;cursor:pointer;color:#d6d9de;font-weight:550;position:relative}
@@ -325,9 +320,21 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .pop-form .field{height:30px}
 
 /* modals */
-.modal-bg{position:fixed;inset:0;background:#05060799;backdrop-filter:blur(4px);display:grid;place-items:center;z-index:60;animation:fade .14s}
+.modal-bg{position:fixed;inset:0;background:#05060799;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;z-index:60;animation:fade .16s;padding:20px}
 @keyframes fade{from{opacity:0}}
-.modal{width:min(460px,92vw);background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:20px;box-shadow:0 30px 70px -20px #000;animation:pop .14s ease-out}
+.modal{width:min(460px,92vw);max-height:calc(100vh - 40px);overflow-y:auto;background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:20px;box-shadow:0 30px 70px -20px #000;animation:pop .16s ease-out}
+.modal.wide{width:min(560px,94vw)}
+
+/* settings sections */
+.settings{display:flex;flex-direction:column;gap:6px}
+.settings section{padding:15px 0;border-top:1px solid var(--line)}
+.settings section:first-child{padding-top:6px;border-top:0}
+.s-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;margin-bottom:4px}
+.s-h .i{width:16px;height:16px;color:var(--muted)}
+.s-desc{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5}
+.s-desc b{color:var(--soft)}
+.s-note{display:inline-flex;align-items:center;gap:5px;margin-top:9px;color:var(--dim);font-size:11px}
+.s-note .i{width:12px;height:12px}
 .modal h3{margin:0 0 4px;font-size:16px;font-weight:800;letter-spacing:-.015em}
 .modal p{margin:0 0 14px;color:var(--muted)}
 .modal p b{color:var(--text)}
@@ -343,16 +350,16 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 #tip.above.show{transform:none}
 
 /* group filter bar */
-.groupbar{display:flex;align-items:center;gap:6px;padding:0 16px 10px;flex-wrap:wrap}
-.groupbar:empty{display:none}
-.gchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 4px 0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);cursor:pointer;font-size:11.5px;font-weight:700;color:var(--soft);transition:background .12s,border-color .12s}
+.groupbar{display:flex;align-items:center;gap:7px;padding:11px 16px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--line)}
+.groupbar:empty{display:none;padding:0;border:0}
+.groupbar::before{content:"Groups";color:var(--dim);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-right:2px}
+.gchip{display:inline-flex;align-items:center;gap:7px;height:27px;padding:0 5px 0 11px;border-radius:8px;border:1px solid var(--line2);background:var(--panel2);cursor:pointer;font-size:11.5px;font-weight:700;color:var(--soft);transition:background .12s,border-color .12s}
 .gchip:hover{background:var(--hover);border-color:#3a3e47}
-.gchip.on{border-color:var(--silver1);background:#202228;color:var(--text)}
-.gchip .gc{min-width:16px;height:16px;padding:0 5px;border-radius:8px;background:#00000033;font-size:10.5px;display:inline-grid;place-items:center}
-.gchip .gplay{width:18px;height:18px;border:0;border-radius:5px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+.gchip.on{border-color:var(--silver1);background:var(--hover);color:var(--text)}
+.gchip .gc{min-width:17px;height:16px;padding:0 5px;border-radius:8px;background:#ffffff14;font-size:10.5px;font-weight:800;display:inline-grid;place-items:center;font-variant-numeric:tabular-nums}
+.gchip .gplay{width:19px;height:19px;border:0;border-radius:6px;background:none;color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
 .gchip .gplay:hover{color:var(--green);background:#10201a}
 .gchip .gplay .i{width:12px;height:12px}
-.gchip.all .gc{background:#00000022}
 
 /* toasts */
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:70;pointer-events:none;align-items:flex-end}
@@ -402,15 +409,6 @@ h1,h2,h3,.place-name,.load-title{font-weight:800!important}
       <button class="btn icon" id="btnSettings" data-i="settings" title="Appearance"></button>
     </div>
   </header>
-
-  <div class="toolbar">
-    <span class="tb-label" data-i="wifi">Network</span>
-    <button class="adapter" id="btnAdapter" title="Network adapter to spoof"><span id="adapterName">Loading adapters…</span><span class="mac" id="adapterMac"></span><span class="chev" data-i="chevron"></span></button>
-    <button class="btn sm" id="btnSpoof" data-i="shuffle" title="Give this adapter a random MAC address (needs admin)"><span id="btnSpoofLbl">Spoof MAC</span></button>
-    <button class="btn sm" id="btnRevert" data-i="undo" title="Restore the adapter's original hardware MAC address (needs admin)">Revert MAC</button>
-    <div class="spacer"></div>
-    <button class="btn sm amber" id="btnCookies" data-i="cookie" title="Wipe the Roblox RobloxCookies.dat files (stock Roblox, Bloxstrap, Fishstrap). Browser cookies are left alone."><span id="btnCookiesLbl">Clear Roblox Cookies</span></button>
-  </div>
 
   <main class="layout">
     <aside class="side">
@@ -715,8 +713,8 @@ function onState(s) {
   renderPlace();
   renderPs();
   renderBuild();
-  renderNet();
   renderLaunch();
+  if (settingsRefresh) settingsRefresh();
   const key = JSON.stringify(s.accounts);
   if (key !== accountsKey) { accountsKey = key; renderGroups(); renderAccounts(); }
   else updateSelectionUI();
@@ -806,20 +804,6 @@ function renderLaunch() {
 }
 
 let netSel = null;
-function renderNet() {
-  const n = S.net, list = n.adapters;
-  if (netSel == null || netSel >= list.length) netSel = n.active >= 0 && n.active < list.length ? n.active : (list.length ? 0 : null);
-  const a = netSel != null ? list[netSel] : null;
-  $('#adapterName').textContent = a ? a.name : 'No network adapters found';
-  $('#adapterMac').textContent = a ? a.mac : '';
-  $('#btnAdapter').disabled = list.length < 2;
-  $('#btnAdapter').title = a ? `${a.desc}${list.length > 1 ? '\nClick to pick another adapter' : ''}` : '';
-  $('#btnSpoof').disabled = !a || n.busy;
-  $('#btnRevert').disabled = !a || n.busy;
-  $('#btnSpoofLbl').textContent = n.busy ? 'Working…' : 'Spoof MAC';
-  $('#btnCookies').disabled = !!n.cookieBusy;
-  $('#btnCookiesLbl').textContent = n.cookieBusy ? 'Clearing…' : 'Clear Roblox Cookies';
-}
 
 function shownBuild(b) {
   if (b.active) return b.active;
@@ -888,7 +872,7 @@ function rowHTML(a, i) {
     <div class="grip" title="Drag to reorder">${icon('grip')}</div>
     <div><div class="cb${on ? ' on' : ''}">${icon('check')}</div></div>
     <div class="ord">${i + 1}</div>
-    <div class="acct">${av}<div class="who"><div class="nm">${esc(name)}${a.group ? `<span class="gpill" title="Group: ${esc(a.group)}">${esc(a.group)}</span>` : ''}</div><div class="un">${a.alias ? '@' + esc(a.username) : 'ID ' + a.id}</div></div></div>
+    <div class="acct">${av}<div class="who"><div class="nm">${esc(name)}${a.group ? `<span class="gpill" title="Group: ${esc(a.group)}">${esc(a.group)}</span>` : ''}${a.pid ? `<span class="pidpill" title="Running — Roblox process ${a.pid}"><span class="rdot"></span>PID ${a.pid}</span>` : ''}</div><div class="un">${a.alias ? '@' + esc(a.username) : 'ID ' + a.id}</div></div></div>
     <div><button class="star${a.priority ? ' on' : ''}" data-act="pri" title="${a.priority ? 'Remove priority' : 'Prioritise: keep at the top and launch first'}">${icon('star')}</button></div>
     <div class="row-act">
       <button class="btn icon sm play" data-act="launch" title="Launch into the current place">${icon('play')}</button>
@@ -967,10 +951,16 @@ function openRowMenu(anchor, id) {
   const a = accById(id);
   if (!a) return;
   const priCount = S.accounts.filter(x => x.priority).length;
+  // If the right-clicked row is part of a multi-selection, bulk actions apply
+  // to the whole selection; per-account actions (copy, edit) stay on this row.
+  const bulk = sel.has(id) && sel.size > 1;
+  const ids = bulk ? orderedSelection() : [id];
+  const many = ids.length > 1 ? ` (${ids.length})` : '';
+  const allPri = ids.every(i => accById(i).priority);
   openMenu(anchor, [
-    { icon: 'play', label: 'Launch', on: () => send('launch', { ids: [id] }) },
-    { icon: 'globe', label: 'Open in browser', on: () => send('browser', { ids: [id] }) },
-    { icon: 'star', label: a.priority ? 'Remove priority' : 'Prioritise', on: () => send('priority', { ids: [id], value: !a.priority }) },
+    { icon: 'play', label: 'Launch' + many, on: () => send('launch', { ids }) },
+    { icon: 'globe', label: 'Open in browser' + many, on: () => send('browser', { ids }) },
+    { icon: 'star', label: (allPri ? 'Remove priority' : 'Prioritise') + many, on: () => send('priority', { ids, value: !allPri }) },
     { icon: 'top', label: 'Move to top', on: () => moveTo(id, a.priority ? 0 : priCount) },
     { icon: 'bottom', label: 'Move to bottom', on: () => moveTo(id, a.priority ? priCount - 1 : S.accounts.length - 1) },
     '-',
@@ -979,9 +969,9 @@ function openRowMenu(anchor, id) {
     { icon: 'key', label: 'Copy password', disabled: !a.hasPassword, on: () => send('copy', { id, what: 'password' }) },
     { icon: 'key', label: 'Copy user:pass', disabled: !a.hasPassword, on: () => send('copy', { id, what: 'userpass' }) },
     '-',
-    { icon: 'folder', label: a.group ? `Group: ${a.group}` : 'Add to group', meta: a.group ? '' : '', on: () => groupModal([id]) },
+    { icon: 'folder', label: (bulk ? 'Set group' : a.group ? `Group: ${a.group}` : 'Add to group') + many, on: () => groupModal(ids) },
     { icon: 'pencil', label: 'Edit alias & password', on: () => editModal(id) },
-    { icon: 'trash', label: 'Remove account', danger: true, on: () => confirmDelete([id]) }
+    { icon: 'trash', label: 'Remove account' + many, danger: true, on: () => confirmDelete(ids) }
   ], { alignRight: true, width: 220 });
 }
 
@@ -1124,11 +1114,11 @@ function openMenu(anchor, items, opts) {
 }
 
 const modals = [];
-function openModal(inner, mount) {
+function openModal(inner, mount, cls) {
   closePopover();
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
-  bg.innerHTML = `<div class="modal" role="dialog">${inner}</div>`;
+  bg.innerHTML = `<div class="modal${cls ? ' ' + cls : ''}" role="dialog">${inner}</div>`;
   document.body.appendChild(bg);
   const close = () => { const k = modals.indexOf(close); if (k >= 0) modals.splice(k, 1); bg.remove(); };
   modals.push(close);
@@ -1341,23 +1331,87 @@ function showHandoff(title, text) {
 }
 const hideHandoff = () => $('#handoff').classList.remove('show');
 
-$('#btnSettings').onclick = e => openPopover(e.currentTarget, pop => {
-  const build = () => {
-    pop.innerHTML = `<div class="pop-head">Theme</div>
-      <div class="theme-grid">${Object.entries(THEMES).map(([k, t]) =>
-        `<button class="theme-opt${k === theme.base ? ' on' : ''}" data-theme="${k}">
-          <span class="theme-sw" style="background:${t.sw}"></span><span class="t">${t.name}</span></button>`).join('')}
-        <label class="theme-opt${theme.base === 'custom' ? ' on' : ''}" title="Pick your own background colour">
-          <span class="theme-sw" style="background:${theme.custom}"></span><span class="t">Custom</span>
-          <input type="color" data-custom value="${isHex(theme.custom) ? theme.custom : '#141824'}"></label></div>`;
-  };
-  build();
-  pop.addEventListener('click', ev => {
-    const t = ev.target.closest('[data-theme]');
-    if (t && !ev.target.closest('[data-custom]')) { theme.set(t.dataset.theme); build(); }
-  });
-  pop.querySelector('[data-custom]').addEventListener('input', ev => { theme.set(null, ev.target.value); build(); });
-}, { width: 280, alignRight: true });
+function buildThemeGrid(container) {
+  container.innerHTML = Object.entries(THEMES).map(([k, t]) =>
+    `<button class="theme-opt${k === theme.base ? ' on' : ''}" data-theme="${k}">
+      <span class="theme-sw" style="background:${t.sw}"></span><span class="t">${t.name}</span></button>`).join('') +
+    `<label class="theme-opt${theme.base === 'custom' ? ' on' : ''}" title="Pick your own background colour">
+      <span class="theme-sw" style="background:${theme.custom}"></span><span class="t">Custom</span>
+      <input type="color" data-custom value="${isHex(theme.custom) ? theme.custom : '#141824'}"></label>`;
+  container.onclick = ev => { const t = ev.target.closest('[data-theme]'); if (t && !ev.target.closest('[data-custom]')) { theme.set(t.dataset.theme); buildThemeGrid(container); } };
+  container.querySelector('[data-custom]').addEventListener('input', ev => { theme.set(null, ev.target.value); buildThemeGrid(container); });
+}
+
+let settingsRefresh = null;
+$('#btnSettings').onclick = () => {
+  openModal(`<h3>Settings</h3>
+    <div class="settings">
+      <section>
+        <div class="s-h">${icon('palette')}Appearance</div>
+        <div class="theme-grid" id="setThemes"></div>
+      </section>
+      <section>
+        <div class="s-h">${icon('wifi')}Network — MAC address</div>
+        <p class="s-desc">Give this network adapter a random <b>MAC address</b>, or restore its hardware default. The adapter restarts, so your internet drops for a few seconds.</p>
+        <button class="adapter" id="setAdapter" style="width:100%"><span id="setAdapterName">Loading adapters…</span><span class="mac" id="setAdapterMac"></span><span class="chev" data-i="chevron"></span></button>
+        <div class="row2 mt"><button class="btn" id="setSpoof" style="flex:1" data-i="shuffle"><span id="setSpoofLbl">Spoof MAC</span></button><button class="btn" id="setRevert" style="flex:1" data-i="undo">Revert MAC</button></div>
+        <div class="s-note" id="setAdminNote" hidden>${icon('shield')}Needs administrator rights — you'll be asked to restart as admin.</div>
+      </section>
+      <section>
+        <div class="s-h">${icon('cookie')}Roblox cookies</div>
+        <p class="s-desc">Wipes the <b>RobloxCookies.dat</b> login file for the stock Roblox client and, if installed, <b>Bloxstrap</b> and <b>Fishstrap</b>. Handy when a client is stuck signed into the wrong account. Your browser cookies and the accounts saved here are <b>not</b> touched.</p>
+        <button class="btn amber" id="setCookies" data-i="cookie" style="width:100%"><span id="setCookiesLbl">Clear Roblox cookies</span></button>
+      </section>
+    </div>
+    <div class="foot"><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    m.querySelectorAll('[data-i]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)));
+    buildThemeGrid(m.querySelector('#setThemes'));
+
+    const refresh = () => {
+      if (!S) return;
+      const list = S.net.adapters, n = S.net;
+      if (netSel == null || netSel >= list.length) netSel = n.active >= 0 && n.active < list.length ? n.active : (list.length ? 0 : null);
+      const a = netSel != null ? list[netSel] : null;
+      m.querySelector('#setAdapterName').textContent = a ? a.name : 'No network adapters found';
+      m.querySelector('#setAdapterMac').textContent = a ? a.mac : '';
+      m.querySelector('#setAdapter').disabled = list.length < 2;
+      m.querySelector('#setAdapter').title = a ? a.desc : '';
+      m.querySelector('#setSpoof').disabled = !a || n.busy;
+      m.querySelector('#setRevert').disabled = !a || n.busy;
+      m.querySelector('#setSpoofLbl').textContent = n.busy ? 'Working…' : 'Spoof MAC';
+      m.querySelector('#setCookies').disabled = !!n.cookieBusy;
+      m.querySelector('#setCookiesLbl').textContent = n.cookieBusy ? 'Clearing…' : 'Clear Roblox cookies';
+      m.querySelector('#setAdminNote').hidden = !!S.elevated;
+    };
+    settingsRefresh = refresh;
+    refresh();
+
+    m.querySelector('#setAdapter').onclick = e => {
+      if (!S) return;
+      openMenu(e.currentTarget, S.net.adapters.map((a, i) => ({
+        icon: 'wifi', label: a.name, meta: a.mac, active: i === netSel, on: () => { netSel = i; refresh(); }
+      })), { width: 360 });
+    };
+    m.querySelector('#setSpoof').onclick = () => {
+      const a = S && S.net.adapters[netSel];
+      if (!a) return;
+      if (!S.elevated) { askAdmin('Changing your MAC address'); return; }
+      confirmModal({ title: 'Spoof MAC address?', html: `<b>${esc(a.name)}</b> gets a random MAC address and restarts, so your internet drops for a few seconds.`, ok: 'Spoof MAC', onOk: () => send('macSpoof', { index: netSel }) });
+    };
+    m.querySelector('#setRevert').onclick = () => {
+      const a = S && S.net.adapters[netSel];
+      if (!a) return;
+      if (!S.elevated) { askAdmin('Changing your MAC address'); return; }
+      confirmModal({ title: 'Revert MAC address?', html: `<b>${esc(a.name)}</b> goes back to its original hardware MAC and restarts, so your internet drops for a few seconds.`, ok: 'Revert MAC', onOk: () => send('macRevert', { index: netSel }) });
+    };
+    m.querySelector('#setCookies').onclick = () => confirmModal({
+      title: 'Clear Roblox cookies?',
+      html: 'This wipes the <b>RobloxCookies.dat</b> file for the stock Roblox client and, if installed, Bloxstrap and Fishstrap. Your browser cookies and the accounts saved in this tool are not touched.',
+      ok: 'Clear cookies', danger: true, onOk: () => send('clearCookies')
+    });
+    m.querySelector('[data-x]').onclick = () => { settingsRefresh = null; close(); };
+  }, 'wide');
+};
 
 $('#btnMulti').onclick = () => {
   if (!S) return;
@@ -1370,39 +1424,7 @@ $('#btnKill').onclick = () => {
   if (!S || !S.alive) { send('killAll'); return; }
   confirmModal({ title: 'Close all Roblox clients?', html: `This force-closes <b>${S.alive}</b> running ${S.alive === 1 ? 'client' : 'clients'}. Unsaved progress in game is lost.`, ok: 'Kill all', danger: true, onOk: () => send('killAll') });
 };
-$('#btnAdapter').onclick = e => {
-  if (!S) return;
-  openMenu(e.currentTarget, S.net.adapters.map((a, i) => ({
-    icon: 'wifi', label: a.name, meta: a.mac, active: i === netSel,
-    on: () => { netSel = i; renderNet(); }
-  })), { width: 330 });
-};
-$('#btnSpoof').onclick = () => {
-  const a = S && S.net.adapters[netSel];
-  if (!a) return;
-  if (!S.elevated) { askAdmin('Changing your MAC address'); return; }
-  confirmModal({
-    title: 'Spoof MAC address?',
-    html: `<b>${esc(a.name)}</b> gets a random MAC address and restarts, so your internet drops for a few seconds.`,
-    ok: 'Spoof MAC', onOk: () => send('macSpoof', { index: netSel })
-  });
-};
-$('#btnRevert').onclick = () => {
-  const a = S && S.net.adapters[netSel];
-  if (!a) return;
-  if (!S.elevated) { askAdmin('Changing your MAC address'); return; }
-  confirmModal({
-    title: 'Revert MAC address?',
-    html: `<b>${esc(a.name)}</b> goes back to its original hardware MAC and restarts, so your internet drops for a few seconds.`,
-    ok: 'Revert MAC', onOk: () => send('macRevert', { index: netSel })
-  });
-};
-$('#btnCookies').onclick = () => confirmModal({
-  title: 'Clear Roblox cookies?',
-  html: 'This wipes the <b>RobloxCookies.dat</b> file for the stock Roblox client and, if installed, Bloxstrap and Fishstrap. Your browser cookies and the accounts saved in this tool are not touched.',
-  ok: 'Clear cookies', danger: true, onOk: () => send('clearCookies')
-});
-$('#btnLaunch').onclick =() => send('launch', { ids: orderedSelection() });
+$('#btnLaunch').onclick = () => send('launch', { ids: orderedSelection() });
 
 $('#placeId').addEventListener('input', e => {
   const v = e.target.value.replace(/\D/g, '');
@@ -1589,7 +1611,7 @@ function demoHandle(msg) {
     const names = ['compr6mised', '3xVale', 'anya2k2a', 'xluvlukee', 'ffwaz123', 'Justincase69426942', 'undav86demedia', 'Hj4457gh0', 'BuzzPinkyy3', 'warrn_plmrs', 'porcupinegood', 'NovaFlux_22', 'quietmarrow', 'SilverTide09', 'emberlynx', 'Kairo_Vex', 'mossy_pebble', 'Lunar_Drift7', 'oakhollow', 'glitchy_rae', 'VelvetStorm', 'pixelnomad44', 'frostbyte_ok', 'Cinder_Ash'];
     demo = {
       type: 'state',
-      accounts: names.map((n, i) => ({ id: 1000 + i * 137, username: n, alias: i === 3 ? 'Main alt' : '', group: i < 4 ? 'Mains' : i < 9 ? 'Farm alts' : '', priority: i < 2, avatar: false, hasPassword: i % 3 === 0 })),
+      accounts: names.map((n, i) => ({ id: 1000 + i * 137, username: n, alias: i === 3 ? 'Main alt' : '', group: i < 4 ? 'Mains' : i < 9 ? 'Farm alts' : '', priority: i < 2, avatar: false, hasPassword: i % 3 === 0, pid: i < 2 ? 24000 + i * 316 : 0 })),
       placeId: 10561483644,
       place: { loaded: true, icon: false, isSub: true, rootPlaceId: 10561456271, name: 'Moonlight Creek', placeName: 'Mystic Falls', creator: 'Insidious Game Studios', playing: 854, visits: 42800000, favorites: 148500 },
       savedPlaces: [{ id: 10561483644, name: 'Mystic Falls', favorite: true }, { id: 10561456271, name: 'Moonlight Creek', favorite: true }, { id: 4924922222, name: 'Brookhaven', favorite: false }],

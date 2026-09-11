@@ -4,6 +4,7 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <map>
 
 struct NetworkAdapterInfo {
     std::string id;
@@ -131,6 +132,11 @@ void RestoreAdapter(int index);
 
 extern std::mutex accountsMutex;
 extern std::vector<RobloxAccount> accounts;
+
+// userId -> PID of the Roblox client last launched for that account (while alive).
+extern std::mutex launchedMutex;
+extern std::map<long long, unsigned long> launchedPids;
+void PruneLaunchedPids();
 
 void LoadAccounts();
 void SaveAccounts();
