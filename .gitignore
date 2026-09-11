@@ -17,6 +17,8 @@ places.dat
 privateserver.dat
 privateservers.dat
 activebuild.dat
+joinbest.dat
+lastserver.dat
 *.preidle.bak
 *.v3.bak
 
