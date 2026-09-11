@@ -385,6 +385,13 @@ static std::string BuildStateJson() {
     o += ",\"cpu\":" + N((long long)(backend::GetCpuUsagePercent() + 0.5f));
     o += std::string(",\"elevated\":") + B(elevated);
     o += std::string(",\"loginBusy\":") + B(g_loginInProgress.load());
+
+    o += std::string(",\"bestServer\":") + B(backend::joinBestServer.load());
+    {
+        std::lock_guard<std::mutex> lock(backend::lastServerMutex);
+        o += ",\"lastServer\":{\"placeId\":" + N(backend::lastServer.placeId) +
+             std::string(",\"has\":") + B(backend::lastServer.placeId > 0 && !backend::lastServer.gameId.empty()) + "}";
+    }
     o += '}';
     return o;
 }
@@ -523,11 +530,41 @@ static void HandlePageMessage(const std::string& text) {
         else if (ids.empty()) backend::Log("[!] Select at least one account to launch.");
         else {
             std::string code = aps.linkCode;
-            std::thread([ids, placeId, code]() {
+            bool best = code.empty() && backend::joinBestServer.load();
+            std::thread([ids, placeId, code, best]() {
+                // For best-ping, resolve one server for the whole batch so every
+                // selected account lands in the same low-ping server (one API call).
+                std::string gameId = best ? backend::FindBestServer(placeId) : "";
                 for (size_t k = 0; k < ids.size(); ++k) {
                     int idx = IndexOfUser(ids[k]);
                     if (idx < 0) continue;
-                    backend::LaunchAccountIntoPrivateServer(idx, placeId, code);
+                    if (!code.empty()) backend::LaunchAccountIntoPrivateServer(idx, placeId, code);
+                    else if (!gameId.empty()) backend::LaunchAccountIntoServer(idx, placeId, gameId);
+                    else backend::LaunchAccountIntoPlace(idx, placeId);
+                    if (k + 1 < ids.size()) Sleep(300);
+                }
+            }).detach();
+        }
+    } else if (cmd == "setBestServer") {
+        backend::SetJoinBestServer(m["value"].boolean());
+    } else if (cmd == "rejoinLast") {
+        std::vector<long long> ids = OrderedIds(m["ids"]);
+        if (ids.empty()) {
+            std::lock_guard<std::mutex> lock(backend::accountsMutex);
+            if (!backend::accounts.empty()) ids.push_back(backend::accounts[0].userId);
+        }
+        long long placeId = 0;
+        std::string gameId;
+        { std::lock_guard<std::mutex> lock(backend::lastServerMutex);
+          placeId = backend::lastServer.placeId; gameId = backend::lastServer.gameId; }
+        if (placeId <= 0 || gameId.empty()) backend::Log("[!] No last server to rejoin yet - launch into a chosen server first.");
+        else if (ids.empty()) backend::Log("[!] Select at least one account to rejoin.");
+        else {
+            std::thread([ids, placeId, gameId]() {
+                for (size_t k = 0; k < ids.size(); ++k) {
+                    int idx = IndexOfUser(ids[k]);
+                    if (idx < 0) continue;
+                    backend::LaunchAccountIntoServer(idx, placeId, gameId);
                     if (k + 1 < ids.size()) Sleep(300);
                 }
             }).detach();
