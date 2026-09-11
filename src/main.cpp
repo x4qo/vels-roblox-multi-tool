@@ -9,6 +9,10 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <commdlg.h>
+#include <wincodec.h>
+
+#pragma comment(lib, "msimg32.lib")
+#pragma comment(lib, "windowscodecs.lib")
 
 #include <algorithm>
 #include <atomic>
@@ -35,6 +39,12 @@ static const UINT_PTR kStateTimer = 1;
 static const UINT_PTR kRevealTimer = 4;
 static bool g_webviewShown = false;
 static void RevealWebView();
+
+// Native splash: the brand icon is painted on the window itself from the first
+// frame, so the loading screen shows instantly. The animated HTML loader is
+// revealed on top once WebView2 has composited it, hiding this seamlessly.
+static HBITMAP g_splashBmp = nullptr;
+static int g_splashW = 0, g_splashH = 0;
 
 static const IID IID_EnvCompletedHandler  = { 0x4e8a3389, 0xc9d8, 0x4bd2, { 0xb6, 0xb5, 0x12, 0x4f, 0xee, 0x6c, 0xc1, 0x4d } };
 static const IID IID_CtrlCompletedHandler = { 0x6c4819f3, 0xc9b7, 0x4260, { 0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c } };
@@ -447,7 +457,7 @@ static void HandlePageMessage(const std::string& text) {
     } else if (cmd == "clearCookies") {
         if (!g_cookieBusy.exchange(true)) {
             std::thread([]() {
-                backend::ClearRobloxCookieFileAndBrowsers();
+                backend::ClearRobloxCookieFiles();
                 g_cookieBusy.store(false);
             }).detach();
         }
@@ -787,11 +797,85 @@ static void ShowWebViewFailure(HRESULT hr) {
 
 // Keep the WebView hidden until the page has painted its loader, so the first
 // thing on screen is the loading screen, not a bare/flashing browser surface.
+static void LoadSplashBitmap() {
+    const BYTE* data = nullptr;
+    DWORD size = 0;
+    if (!LoadResourceBytes(IDR_BRAND_PNG, data, size)) return;
+
+    IWICImagingFactory* factory = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))) return;
+    IWICStream* stream = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICFormatConverter* converter = nullptr;
+    if (SUCCEEDED(factory->CreateStream(&stream)) &&
+        SUCCEEDED(stream->InitializeFromMemory(const_cast<BYTE*>(data), size)) &&
+        SUCCEEDED(factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnLoad, &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)) &&
+        SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+        SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom))) {
+        UINT w = 0, h = 0;
+        converter->GetSize(&w, &h);
+        if (w && h) {
+            BITMAPINFO bi = {};
+            bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bi.bmiHeader.biWidth = (LONG)w;
+            bi.bmiHeader.biHeight = -(LONG)h;  // top-down
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = BI_RGB;
+            void* bits = nullptr;
+            HBITMAP bmp = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+            if (bmp && bits && SUCCEEDED(converter->CopyPixels(nullptr, w * 4, w * h * 4, (BYTE*)bits))) {
+                g_splashBmp = bmp;
+                g_splashW = (int)w;
+                g_splashH = (int)h;
+            } else if (bmp) {
+                DeleteObject(bmp);
+            }
+        }
+    }
+    if (converter) converter->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    if (stream) stream->Release();
+    if (factory) factory->Release();
+}
+
+static void PaintSplash(HDC hdc, const RECT& rc) {
+    HBRUSH bgBrush = CreateSolidBrush(g_clientBg);
+    FillRect(hdc, &rc, bgBrush);
+    DeleteObject(bgBrush);
+    if (g_webviewShown || !g_splashBmp) return;
+
+    UINT dpi = GetDpiForWindow(g_hwnd);
+    if (!dpi) dpi = 96;
+    int cx = (rc.left + rc.right) / 2, cy = (rc.top + rc.bottom) / 2;
+    int tile = MulDiv(86, dpi, 96), r = MulDiv(23, dpi, 96);
+
+    HBRUSH tileBrush = CreateSolidBrush(RGB(23, 25, 29));
+    HPEN tilePen = CreatePen(PS_SOLID, 1, RGB(44, 47, 55));
+    HGDIOBJ ob = SelectObject(hdc, tileBrush), op = SelectObject(hdc, tilePen);
+    RoundRect(hdc, cx - tile / 2, cy - tile / 2, cx + tile / 2, cy + tile / 2, r, r);
+    SelectObject(hdc, ob);
+    SelectObject(hdc, op);
+    DeleteObject(tileBrush);
+    DeleteObject(tilePen);
+
+    int iw = MulDiv(52, dpi, 96), ih = iw * g_splashH / (g_splashW ? g_splashW : 1);
+    HDC mem = CreateCompatibleDC(hdc);
+    HGDIOBJ oldBmp = SelectObject(mem, g_splashBmp);
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    AlphaBlend(hdc, cx - iw / 2, cy - ih / 2, iw, ih, mem, 0, 0, g_splashW, g_splashH, bf);
+    SelectObject(mem, oldBmp);
+    DeleteDC(mem);
+}
+
 static void RevealWebView() {
-    if (g_webviewShown || !g_controller) return;
+    if (g_webviewShown) return;
     g_webviewShown = true;
     KillTimer(g_hwnd, kRevealTimer);
-    g_controller->put_IsVisible(TRUE);
+    if (g_controller) g_controller->put_IsVisible(TRUE);
 }
 
 static void OnControllerCreated(ICoreWebView2Controller* controller) {
@@ -1006,13 +1090,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             PostToPage("{\"type\":\"relaunch\",\"stage\":\"cancelled\"}");
         }
         return 0;
-    case WM_ERASEBKGND: {
+    case WM_ERASEBKGND:
+        return 1;  // handled in WM_PAINT to avoid flicker
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
         GetClientRect(hwnd, &rc);
-        HBRUSH brush = CreateSolidBrush(g_clientBg);
-        FillRect(reinterpret_cast<HDC>(wParam), &rc, brush);
-        DeleteObject(brush);
-        return 1;
+        PaintSplash(hdc, rc);
+        EndPaint(hwnd, &ps);
+        return 0;
     }
     case WM_DESTROY:
         KillTimer(hwnd, kStateTimer);
@@ -1045,6 +1132,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmd
     if (enableMulti && backend::IsElevated()) backend::StartWatching();
 
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    LoadSplashBitmap();
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
@@ -1095,6 +1183,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmd
 
     InitWebView();
     SetTimer(g_hwnd, kStateTimer, 500, nullptr);
+    SetTimer(g_hwnd, kRevealTimer, 5000, nullptr);  // failsafe if the page never loads
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

@@ -137,24 +137,16 @@ b,strong{font-weight:700}
 body.ready #app{opacity:1}
 
 /* loading screen */
-@property --spin{syntax:'<angle>';inherits:false;initial-value:0deg}
 #loader{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:var(--bg);transition:opacity .45s ease,visibility .45s}
 #loader.gone{opacity:0;visibility:hidden}
-.load-in{display:flex;flex-direction:column;align-items:center;gap:30px;animation:load-enter .55s cubic-bezier(.2,.7,.3,1) both}
+.load-in{display:flex;flex-direction:column;align-items:center;gap:28px;animation:load-enter .5s cubic-bezier(.2,.7,.3,1) both}
 @keyframes load-enter{from{opacity:0;transform:translateY(8px) scale(.96)}}
-.load-mark{width:88px;height:88px;border-radius:24px;background:var(--brand-bg);border:1px solid var(--line2);display:grid;place-items:center;position:relative;animation:load-bob 3.2s ease-in-out infinite}
-.load-mark img{width:54px;height:54px;filter:drop-shadow(0 3px 8px #000b);position:relative;z-index:2}
-/* soft breathing glow */
-.load-mark::before{content:"";position:absolute;inset:-16px;border-radius:36px;background:radial-gradient(circle,var(--silver1),transparent 68%);opacity:.09;filter:blur(8px);animation:load-glow 3.2s ease-in-out infinite;z-index:0}
-/* spinning accent arc */
-.load-mark::after{content:"";position:absolute;inset:-4px;border-radius:27px;padding:2.5px;background:conic-gradient(from var(--spin),transparent 0deg 250deg,var(--silver1) 320deg,transparent 360deg);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:load-spin 1.3s linear infinite;z-index:1}
-.load-bar{width:148px;height:3px;border-radius:2px;background:var(--sk-bg);overflow:hidden;position:relative}
-.load-bar i{position:absolute;top:0;bottom:0;left:-38%;width:38%;border-radius:2px;background:linear-gradient(90deg,transparent,var(--silver1),transparent);animation:load-slide 1.25s cubic-bezier(.45,0,.35,1) infinite}
-@keyframes load-spin{to{--spin:360deg}}
-@keyframes load-bob{50%{transform:translateY(-6px)}}
-@keyframes load-glow{50%{opacity:.2}}
-@keyframes load-slide{0%{left:-38%}100%{left:100%}}
-@media (prefers-reduced-motion:reduce){.load-in,.load-mark,.load-mark::before,.load-mark::after,.load-bar i{animation:none}}
+.load-mark{width:86px;height:86px;border-radius:23px;background:var(--brand-bg);border:1px solid var(--line2);display:grid;place-items:center;box-shadow:0 14px 34px -16px #000;animation:load-breathe 2.6s ease-in-out infinite}
+.load-mark img{width:52px;height:52px}
+@keyframes load-breathe{50%{transform:scale(1.05)}}
+.load-bar{width:150px;height:3px;border-radius:2px;background:var(--sk-bg);overflow:hidden;position:relative}
+.load-bar i{position:absolute;top:0;left:0;height:100%;width:40%;border-radius:2px;background:linear-gradient(90deg,transparent,var(--silver1) 45%,var(--silver1) 55%,transparent);animation:load-slide 1.15s ease-in-out infinite}
+@keyframes load-slide{0%{transform:translateX(-130%)}100%{transform:translateX(325%)}}
 .btn.toggle .sw,.btn.toggle .sw::after{transition:all .25s cubic-bezier(.3,.7,.3,1)}
 .btn.toggle{transition:background .25s,border-color .25s,color .25s}
 .handoff{position:fixed;inset:0;z-index:90;background:#0b0c0ecc;backdrop-filter:blur(6px);display:grid;place-items:center;opacity:0;pointer-events:none;transition:opacity .25s ease}
@@ -383,7 +375,7 @@ h1,h2,h3,.place-name{font-weight:800!important}
     <button class="btn sm" id="btnSpoof" data-i="shuffle" title="Give this adapter a random MAC address (needs admin)"><span id="btnSpoofLbl">Spoof MAC</span></button>
     <button class="btn sm" id="btnRevert" data-i="undo" title="Restore the adapter's original hardware MAC address (needs admin)">Revert MAC</button>
     <div class="spacer"></div>
-    <button class="btn sm amber" id="btnCookies" data-i="cookie" title="Wipe RobloxCookies.dat and Roblox cookies from your browsers"><span id="btnCookiesLbl">Clear Roblox Cookies</span></button>
+    <button class="btn sm amber" id="btnCookies" data-i="cookie" title="Wipe the Roblox RobloxCookies.dat files (stock Roblox, Bloxstrap, Fishstrap). Browser cookies are left alone."><span id="btnCookiesLbl">Clear Roblox Cookies</span></button>
   </div>
 
   <main class="layout">
@@ -1246,7 +1238,7 @@ $('#btnRevert').onclick = () => {
 };
 $('#btnCookies').onclick = () => confirmModal({
   title: 'Clear Roblox cookies?',
-  html: 'This wipes <b>RobloxCookies.dat</b> and removes Roblox cookies from Chrome, Edge, Firefox and Opera. <b>Those browsers are force-closed</b> first. Saved accounts in this tool are not affected.',
+  html: 'This wipes the <b>RobloxCookies.dat</b> file for the stock Roblox client and, if installed, Bloxstrap and Fishstrap. Your browser cookies and the accounts saved in this tool are not touched.',
   ok: 'Clear cookies', danger: true, onOk: () => send('clearCookies')
 });
 $('#btnLaunch').onclick =() => send('launch', { ids: orderedSelection() });
