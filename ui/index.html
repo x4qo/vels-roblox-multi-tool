@@ -477,7 +477,6 @@ h1,h2,h3,.place-name,.load-title{font-weight:800!important}
         <h2>Accounts</h2><span class="n" id="accCount">0</span>
         <div class="field search"><span data-i="search"></span><input id="search" spellcheck="false" placeholder="Search accounts"></div>
         <div class="spacer"></div>
-        <span class="selinfo" id="selInfo"></span>
         <button class="btn sm" id="btnPri" data-i="star"><span id="btnPriLbl">Prioritise</span></button>
         <button class="btn sm" id="btnGroup" data-i="folder">Group</button>
         <button class="btn sm good" id="btnBrowser" data-i="globe">Browser</button>
@@ -912,7 +911,6 @@ function updateSelectionUI() {
   const n = sel.size;
   $('#launchCount').textContent = n;
   $('#btnLaunch').disabled = n === 0;
-  $('#selInfo').innerHTML = n ? `<b>${n}</b> selected` : '';
   ['#btnPri', '#btnGroup', '#btnBrowser', '#btnDelete'].forEach(q => { $(q).disabled = n === 0; });
   const chosen = S.accounts.filter(a => sel.has(a.id));
   $('#btnPriLbl').textContent = chosen.length && chosen.every(a => a.priority) ? 'Unprioritise' : 'Prioritise';
