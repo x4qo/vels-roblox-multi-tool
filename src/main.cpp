@@ -1034,7 +1034,11 @@ static void InitWebView() {
         DWORD n = GetEnvironmentVariableW(L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", existing, 2048);
         hadPreviousArgs = n > 0 && n < 2048;
         if (hadPreviousArgs) previousArgs.assign(existing, n);
-        std::wstring flags = L"--enable-gpu-rasterization --enable-zero-copy --enable-smooth-scrolling "
+        // Note: GPU rasterization is intentionally NOT forced - it makes Chromium
+        // render text with grayscale AA instead of crisp ClearType. Keep smooth
+        // scrolling and no throttling/occlusion pauses (the last matters for the
+        // admin hand-off, which paints while still covered by the old window).
+        std::wstring flags = L"--enable-smooth-scrolling "
                              L"--disable-background-timer-throttling --disable-renderer-backgrounding "
                              L"--disable-features=CalculateNativeWinOcclusion";
         if (hadPreviousArgs) flags = previousArgs + L" " + flags;
