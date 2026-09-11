@@ -21,7 +21,7 @@ html,body{height:100%;margin:0}
 /* theme swaps and colour changes glide instead of snapping */
 .top,.toolbar,.card,.accounts,.acc-h,.acc-foot,.thead,.field,.chip,.status,.brand-mark,.buildrow,.adapter,.tile,.pchip,body{
   transition:background-color .3s ease,border-color .3s ease,color .25s ease}
-body{background:var(--bg);color:var(--text);font:13px/1.45 "Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden;user-select:none;font-feature-settings:"cv11","ss01"}
+body{background:var(--bg);color:var(--text);font:13.5px/1.45 "Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;text-rendering:optimizeLegibility;font-optical-sizing:auto;-webkit-font-smoothing:antialiased}
 input,textarea{user-select:text}
 button{font:inherit;color:inherit}
 b,strong{font-weight:700}
@@ -132,9 +132,9 @@ b,strong{font-weight:700}
 .shimmer,.sk{background:var(--sk-bg);animation:pulse 1.4s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.45}}
 
-/* smooth start-up and admin hand-off */
-#app{opacity:0;transition:opacity .35s ease}
-body.ready #app{opacity:1}
+/* The loader covers start-up, so the app itself does not fade - a steady
+   opacity:1 with no compositing layer lets text render as crisply as WebView2
+   allows (an opacity<1 layer forces blurrier grayscale text). */
 
 /* loading screen */
 #loader{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:var(--bg);transition:opacity .45s ease,visibility .45s}
@@ -345,8 +345,12 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
 
 /* every piece of text is Inter, bold */
-*,*::before,*::after,input::placeholder,textarea::placeholder{font-family:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif!important;font-weight:700!important}
-h1,h2,h3,.place-name{font-weight:800!important}
+/* All Inter. Semibold base reads clearly bold but renders cleaner than a
+   universal 700 (heavy weights look blobby in WebView2's grayscale AA);
+   names, headings, values and buttons stay a full bold for emphasis. */
+*,*::before,*::after,input::placeholder,textarea::placeholder{font-family:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif!important;font-weight:600!important}
+.nm,.btn,.chip b,.pstats b,.acc-h h2,.card-h h2,.brand h1,.n,.ord,.mi,.menu,b,strong,.tag,.status .t b,.place-by b,.subplace b,.count,.selinfo b{font-weight:700!important}
+h1,h2,h3,.place-name,.load-title{font-weight:800!important}
 
 @media (max-width:1320px){.hide-md{display:none!important}}
 @media (max-width:1180px){
