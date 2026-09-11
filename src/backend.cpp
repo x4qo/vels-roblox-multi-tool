@@ -1094,6 +1094,36 @@ void RestoreAdapter(int index) {
 std::mutex accountsMutex;
 std::vector<RobloxAccount> accounts;
 
+std::mutex launchedMutex;
+std::map<long long, unsigned long> launchedPids;
+
+void PruneLaunchedPids() {
+    auto alive = FindPidsByName(L"RobloxPlayerBeta.exe");
+    std::set<DWORD> aliveSet(alive.begin(), alive.end());
+    std::lock_guard<std::mutex> lk(launchedMutex);
+    for (auto it = launchedPids.begin(); it != launchedPids.end();) {
+        if (!aliveSet.count((DWORD)it->second)) it = launchedPids.erase(it);
+        else ++it;
+    }
+}
+
+// After launching an account, the new RobloxPlayerBeta process is whichever PID
+// wasn't present just before. Runs briefly in the background so it doesn't hold
+// up the launch loop.
+static void AssignLaunchedPid(long long userId, std::set<DWORD> before) {
+    for (int i = 0; i < 24; ++i) {
+        auto now = FindPidsByName(L"RobloxPlayerBeta.exe");
+        DWORD found = 0;
+        for (DWORD p : now) if (!before.count(p)) { found = p; break; }
+        if (found) {
+            std::lock_guard<std::mutex> lk(launchedMutex);
+            launchedPids[userId] = found;
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+}
+
 std::mutex placeInfoMutex;
 PlaceInfo placeInfo;
 
@@ -1697,6 +1727,9 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         "+browsertrackerid:" + browserTrackerId +
         "+robloxLocale:en_us+gameLocale:en_us+channel:+LaunchExp:InApp";
 
+    std::set<DWORD> pidsBefore;
+    { auto v = FindPidsByName(L"RobloxPlayerBeta.exe"); pidsBefore.insert(v.begin(), v.end()); }
+
     bool pinnedBuild;
     { std::lock_guard<std::mutex> lock(robloxBuildMutex); pinnedBuild = !robloxBuild.activeVersion.empty(); }
     if (pinnedBuild) {
@@ -1704,6 +1737,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
             ScrubAndLockRobloxCookieFile(("after failed launch for " + account.username).c_str(), false);
             return;
         }
+        std::thread(AssignLaunchedPid, account.userId, pidsBefore).detach();
         if (!gameId.empty()) SaveLastServer(placeId, gameId);
         Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
             (linkCode.empty() ? (gameId.empty() ? "." : " (chosen server).") : " (private server)."));
@@ -1712,7 +1746,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         return;
     }
 
-    int beforeCount = (int)FindPidsByName(L"RobloxPlayerBeta.exe").size();
+    int beforeCount = (int)pidsBefore.size();
     std::wstring wuri(uri.begin(), uri.end());
     HINSTANCE r = ShellExecuteW(nullptr, L"open", wuri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     bool launched = (INT_PTR)r > 32 && WaitForRobloxProcessCountAbove(beforeCount, 5000);
@@ -1721,6 +1755,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         return;
     }
 
+    std::thread(AssignLaunchedPid, account.userId, pidsBefore).detach();
     if (!gameId.empty()) SaveLastServer(placeId, gameId);
     Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
         (linkCode.empty() ? (gameId.empty() ? "." : " (chosen server).") : " (private server)."));
