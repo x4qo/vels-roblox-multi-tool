@@ -31,7 +31,7 @@ echo Compiling - this takes 20-60+ seconds with no output, that's normal, g++ do
   src\main.cpp src\backend.cpp src\login.cpp ^
   src\app_icon.res ^
   -o VelsMultiTool.exe ^
-  -lshell32 -lshlwapi -lcomdlg32 -liphlpapi -luser32 -lgdi32 -ldwmapi -lwinhttp -lws2_32 -lcrypt32 -lole32 -loleaut32 -luuid -lwindowscodecs ^
+  -lshell32 -lshlwapi -lcomdlg32 -liphlpapi -luser32 -lgdi32 -lmsimg32 -ldwmapi -lwinhttp -lws2_32 -lcrypt32 -lole32 -loleaut32 -luuid -lwindowscodecs ^
   -static-libgcc -static-libstdc++ -static
 
 if errorlevel 1 (
