@@ -143,6 +143,22 @@ void MoveAccount(int from, int to);
 void SetAccountPriority(int index, bool priority);
 
 void LaunchAccountIntoPlace(int index, long long placeId);
+void LaunchAccountIntoServer(int index, long long placeId, const std::string& gameId);
+
+// Picks the lowest-ping non-full public server from Roblox's own server list
+// (games.roblox.com/v1/games/{placeId}/servers/Public) - the same source RoSeal
+// reads. Returns the server (job) GUID, or "" if none/failure.
+std::string FindBestServer(long long placeId);
+
+extern std::atomic<bool> joinBestServer;
+void SetJoinBestServer(bool on);
+void LoadJoinBestServer();
+
+struct LastServer { long long placeId = 0; std::string gameId; };
+extern std::mutex lastServerMutex;
+extern LastServer lastServer;
+void LoadLastServer();
+void SaveLastServer(long long placeId, const std::string& gameId);
 
 void LaunchRobloxClient();
 void LaunchAccountClient(int index);

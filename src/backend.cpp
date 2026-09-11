@@ -25,6 +25,8 @@
 #include <functional>
 #include <algorithm>
 
+#include "json.h"
+
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "winhttp.lib")
@@ -204,6 +206,8 @@ void Init(const std::wstring& exeDir) {
     LoadSavedPlaces();
     LoadSavedPrivateServers();
     LoadActivePrivateServer();
+    LoadJoinBestServer();
+    LoadLastServer();
     LoadRobloxBuilds();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
@@ -1614,7 +1618,7 @@ void SetAccountPriority(int index, bool priority) {
     Log(priority ? "[v] Prioritised " + accountName + "." : "[i] Removed priority from " + accountName + ".");
 }
 
-static void LaunchAccountInternal(int index, long long placeId, const std::string& linkCode) {
+static void LaunchAccountInternal(int index, long long placeId, const std::string& linkCode, const std::string& gameId = "") {
     RobloxAccount account;
     {
         std::lock_guard<std::mutex> lock(accountsMutex);
@@ -1646,13 +1650,18 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         std::chrono::system_clock::now().time_since_epoch()).count();
 
     std::string placeLauncherUrl;
-    if (linkCode.empty()) {
-        placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGame"
-            "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) + "&isPlayTogetherGame=false";
-    } else {
+    if (!linkCode.empty()) {
         placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestPrivateGame"
             "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) +
             "&linkCode=" + UrlEncode(linkCode) + "&accessCode=&isPlayTogetherGame=false";
+    } else if (!gameId.empty()) {
+        // Join one specific server instance (best-ping pick or rejoin).
+        placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGameJob"
+            "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) +
+            "&gameId=" + UrlEncode(gameId) + "&isPlayTogetherGame=false";
+    } else {
+        placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGame"
+            "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) + "&isPlayTogetherGame=false";
     }
 
     std::string uri = "roblox-player:1+launchmode:play+gameinfo:" + ticket +
@@ -1668,8 +1677,9 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
             ScrubAndLockRobloxCookieFile(("after failed launch for " + account.username).c_str(), false);
             return;
         }
+        if (!gameId.empty()) SaveLastServer(placeId, gameId);
         Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
-            (linkCode.empty() ? "." : " (private server)."));
+            (linkCode.empty() ? (gameId.empty() ? "." : " (chosen server).") : " (private server)."));
         AddActivity(linkCode.empty() ? "Launched Roblox" : "Launched into private server", account.username);
         SchedulePostLaunchCookieScrub(account.username);
         return;
@@ -1684,14 +1694,19 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         return;
     }
 
+    if (!gameId.empty()) SaveLastServer(placeId, gameId);
     Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
-        (linkCode.empty() ? "." : " (private server)."));
+        (linkCode.empty() ? (gameId.empty() ? "." : " (chosen server).") : " (private server)."));
     AddActivity(linkCode.empty() ? "Launched Roblox" : "Launched into private server", account.username);
     SchedulePostLaunchCookieScrub(account.username);
 }
 
 void LaunchAccountIntoPlace(int index, long long placeId) {
     LaunchAccountInternal(index, placeId, "");
+}
+
+void LaunchAccountIntoServer(int index, long long placeId, const std::string& gameId) {
+    LaunchAccountInternal(index, placeId, "", gameId);
 }
 
 void LaunchAccountIntoPrivateServer(int index, long long placeId, const std::string& linkCode) {
@@ -1791,6 +1806,81 @@ void LaunchAccountClient(int index) {
     Log("[v] Opened the Roblox client signed in as " + account.username + ".");
     AddActivity("Opened Roblox client", account.username);
     SchedulePostLaunchCookieScrub(account.username);
+}
+
+std::atomic<bool> joinBestServer{ false };
+std::mutex lastServerMutex;
+LastServer lastServer;
+
+std::string FindBestServer(long long placeId) {
+    if (placeId <= 0) return "";
+    HttpResponse resp = HttpRequest(L"games.roblox.com",
+        L"/v1/games/" + std::to_wstring(placeId) + L"/servers/Public?excludeFullGames=true&limit=100",
+        L"GET", "", {}, "");
+    if (!resp.ok || resp.status != 200) {
+        Log("[!] Could not fetch the server list (HTTP " + std::to_string(resp.status) + ").");
+        return "";
+    }
+
+    json::Value root;
+    if (!json::Parse(resp.body, root)) { Log("[!] Could not parse the server list."); return ""; }
+
+    std::string best;
+    double bestPing = 1e18;
+    long long bestPlaying = -1;
+    for (const auto& s : root["data"].a) {
+        std::string id = s["id"].str();
+        if (id.empty()) continue;
+        long long playing = s["playing"].i64(), maxPlayers = s["maxPlayers"].i64();
+        if (maxPlayers > 0 && playing >= maxPlayers) continue;
+        double ping = s["ping"].type == json::Value::Number ? s["ping"].n : 1e17;
+        // Lowest ping wins; break ties toward the fuller server (faster to fill/keep alive).
+        if (ping < bestPing || (ping == bestPing && playing > bestPlaying)) {
+            bestPing = ping;
+            bestPlaying = playing;
+            best = id;
+        }
+    }
+
+    if (best.empty()) Log("[!] No joinable public servers found for " + std::to_string(placeId) + ".");
+    else Log("[i] Best server ~" + std::to_string((int)(bestPing + 0.5)) + "ms ping.");
+    return best;
+}
+
+static std::wstring JoinBestFilePath()  { return g_exeDir + L"\\joinbest.dat"; }
+static std::wstring LastServerFilePath() { return g_exeDir + L"\\lastserver.dat"; }
+
+void SetJoinBestServer(bool on) {
+    joinBestServer = on;
+    std::ofstream f(JoinBestFilePath().c_str(), std::ios::trunc);
+    if (f) f << (on ? 1 : 0);
+}
+
+void LoadJoinBestServer() {
+    std::ifstream f(JoinBestFilePath().c_str());
+    int v = 0;
+    if (f >> v) joinBestServer = (v != 0);
+}
+
+void SaveLastServer(long long placeId, const std::string& gameId) {
+    {
+        std::lock_guard<std::mutex> lock(lastServerMutex);
+        lastServer.placeId = placeId;
+        lastServer.gameId = gameId;
+    }
+    std::ofstream f(LastServerFilePath().c_str(), std::ios::trunc);
+    if (f) f << placeId << ' ' << gameId;
+}
+
+void LoadLastServer() {
+    std::ifstream f(LastServerFilePath().c_str());
+    long long pid = 0;
+    std::string gid;
+    if (f >> pid >> gid) {
+        std::lock_guard<std::mutex> lock(lastServerMutex);
+        lastServer.placeId = pid;
+        lastServer.gameId = gid;
+    }
 }
 
 void LaunchRobloxClient() {
