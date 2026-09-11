@@ -19,6 +19,7 @@ struct RobloxAccount {
     std::string cookie;
     std::string password;
     std::string alias;
+    std::string group;
     bool priority = false;
 
     long long friendsCount = -1;
@@ -141,6 +142,7 @@ void SetAccountAlias(int index, const std::string& alias);
 
 void MoveAccount(int from, int to);
 void SetAccountPriority(int index, bool priority);
+void SetAccountGroup(int index, const std::string& group);
 
 void LaunchAccountIntoPlace(int index, long long placeId);
 void LaunchAccountIntoServer(int index, long long placeId, const std::string& gameId);
