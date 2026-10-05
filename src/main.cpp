@@ -395,6 +395,16 @@ static std::string BuildStateJson() {
 
     o += std::string(",\"bestServer\":") + B(backend::joinBestServer.load());
     {
+        backend::ArrangeSettings as;
+        { std::lock_guard<std::mutex> lock(backend::arrangeMutex); as = backend::arrangeSettings; }
+        o += ",\"arrange\":{\"preset\":" + Quote(as.preset) + ",\"gap\":" + N(as.gap) +
+             std::string(",\"auto\":") + B(as.autoArrange) + ",\"monitor\":" + N(as.monitor) +
+             ",\"windows\":" + N(backend::CountRobloxWindows()) + ",\"monitors\":[";
+        auto mons = backend::MonitorLabels();
+        for (size_t i = 0; i < mons.size(); ++i) o += (i ? "," : "") + Quote(mons[i]);
+        o += "]}";
+    }
+    {
         std::lock_guard<std::mutex> lock(backend::lastServerMutex);
         o += ",\"lastServer\":{\"placeId\":" + N(backend::lastServer.placeId) +
              std::string(",\"has\":") + B(backend::lastServer.placeId > 0 && !backend::lastServer.gameId.empty()) + "}";
@@ -552,8 +562,47 @@ static void HandlePageMessage(const std::string& text) {
                 }
             }).detach();
         }
+    } else if (cmd == "arrange") {
+        std::string preset = m["preset"].str();
+        std::thread([preset]() { backend::ArrangeRobloxWindows(preset); }).detach();
+    } else if (cmd == "arrangeSet") {
+        backend::ArrangeSettings s;
+        { std::lock_guard<std::mutex> lock(backend::arrangeMutex); s = backend::arrangeSettings; }
+        bool wasAuto = s.autoArrange;
+        if (!m["preset"].str().empty()) s.preset = m["preset"].str();
+        if (m["gap"].type == json::Value::Number) s.gap = (int)m["gap"].i64();
+        if (m["monitor"].type == json::Value::Number) s.monitor = (int)m["monitor"].i64();
+        if (m["auto"].type == json::Value::Bool) s.autoArrange = m["auto"].boolean();
+        backend::SetArrangeSettings(s);
+        // Re-tile straight away so the change is visible (and when auto just turned on).
+        if (m["apply"].boolean() || (s.autoArrange && !wasAuto))
+            std::thread([]() { backend::ArrangeRobloxWindows(""); }).detach();
     } else if (cmd == "setBestServer") {
         backend::SetJoinBestServer(m["value"].boolean());
+    } else if (cmd == "joinServer") {
+        std::vector<long long> ids = OrderedIds(m["ids"]);
+        if (ids.empty()) {
+            std::lock_guard<std::mutex> lock(backend::accountsMutex);
+            if (!backend::accounts.empty()) ids.push_back(backend::accounts[0].userId);
+        }
+        long long placeId = m["placeId"].i64();
+        std::string gameId = m["gameId"].str();
+        bool validId = gameId.size() == 36;
+        for (char c : gameId) if (!(isxdigit((unsigned char)c) || c == '-')) validId = false;
+        if (placeId <= 0 || !validId) backend::Log("[!] Join Server needs a Place ID and a valid server ID.");
+        else if (ids.empty()) backend::Log("[!] Select at least one account to join with.");
+        else {
+            backend::Log("[+] Joining server " + gameId.substr(0, 8) + "... in place " + std::to_string(placeId) +
+                         " with " + std::to_string(ids.size()) + " account" + (ids.size() == 1 ? "." : "s."));
+            std::thread([ids, placeId, gameId]() {
+                for (size_t k = 0; k < ids.size(); ++k) {
+                    int idx = IndexOfUser(ids[k]);
+                    if (idx < 0) continue;
+                    backend::LaunchAccountIntoServer(idx, placeId, gameId);
+                    if (k + 1 < ids.size()) Sleep(300);
+                }
+            }).detach();
+        }
     } else if (cmd == "rejoinLast") {
         std::vector<long long> ids = OrderedIds(m["ids"]);
         if (ids.empty()) {

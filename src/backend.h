@@ -250,4 +250,16 @@ extern std::mutex systemStatusMutex;
 extern SystemStatus systemStatus;
 void RefreshSystemStatus(int selectedAccountIndex);
 
+// Window arrange (arrange.cpp). preset: grid | columns | rows | focus | cascade | mini.
+// monitor: index into MonitorLabels() (0 = main display).
+struct ArrangeSettings { std::string preset = "grid"; int gap = 6; bool autoArrange = false; int monitor = 0; };
+extern std::mutex arrangeMutex;
+extern ArrangeSettings arrangeSettings;
+void LoadArrangeSettings();
+void SetArrangeSettings(const ArrangeSettings& s);
+std::vector<std::string> MonitorLabels();
+int CountRobloxWindows();
+int ArrangeRobloxWindows(const std::string& presetOverride);
+void StartAutoArrangeWatcher();
+
 }

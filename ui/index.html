@@ -327,6 +327,23 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 
 /* settings sections */
 .settings{display:flex;flex-direction:column;gap:6px}
+/* window arrange */
+.ar-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.ar-opt{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);cursor:pointer;color:var(--muted);font:inherit;font-size:12px;font-weight:600;text-align:left;transition:border-color .15s,color .15s,background .15s}
+.ar-opt:hover{color:var(--text);border-color:#3a3d45}
+.ar-opt.on{color:var(--text);border-color:var(--silver1);background:#1c1e24}
+.ar-opt svg{width:100%;height:auto;display:block;border-radius:5px;background:#0d0e11}
+.ar-opt svg rect.w{fill:#2a2d34;transition:fill .15s}
+.ar-opt.on svg rect.w,.ar-opt:hover svg rect.w{fill:var(--silver1)}
+.ar-row{display:flex;gap:8px;align-items:center;margin-top:10px}
+.ar-row .lbl{font-size:12px;color:var(--muted);min-width:64px}
+.ar-seg{display:flex;flex:1;border:1px solid var(--line2);border-radius:9px;overflow:hidden}
+.ar-seg button{flex:1;border:0;background:var(--bg2);color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:6px 0;cursor:pointer}
+.ar-seg button+button{border-left:1px solid var(--line2)}
+.ar-seg button.on{background:#1c1e24;color:var(--text)}
+/* drag-to-select */
+body.is-selecting,body.is-selecting *{user-select:none!important}
+.row.paint{background:#1a1c22}
 .settings section{padding:15px 0;border-top:1px solid var(--line)}
 .settings section:first-child{padding-top:6px;border-top:0}
 .s-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;margin-bottom:4px}
@@ -404,6 +421,7 @@ h1,h2,h3,.place-name,.load-title{font-weight:800!important}
     <div class="actions">
       <button class="btn toggle" id="btnMulti"><span class="sw"></span>Multi Instance</button>
       <button class="btn" id="btnClient" data-i="monitor" title="Open the Roblox app signed in (selected account, or the top one) without joining a game">Launch Client</button>
+      <button class="btn" id="btnArrange" data-i="layout" title="Tile all Roblox windows neatly (right-click to pick a layout)">Arrange <span class="count" id="arrangeCount">0</span></button>
       <button class="btn danger" id="btnKill" data-i="octagon" title="Close every running Roblox client">Kill All</button>
       <button class="btn primary" id="btnLaunch" data-i="play" title="Launch the selected accounts, in list order">Launch Selected <span class="count" id="launchCount">0</span></button>
       <button class="btn icon" id="btnSettings" data-i="settings" title="Appearance"></button>
@@ -432,6 +450,15 @@ h1,h2,h3,.place-name,.load-title{font-weight:800!important}
           <span class="switch" id="bestSwitch"></span>
         </button>
         <button class="btn good mt" id="btnRejoin" data-i="rewind" style="width:100%" title="Relaunch the selected accounts (or the top one) into the last server you joined">Rejoin last server</button>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><span data-i="target"></span><h2>Join Server</h2></div>
+        <div class="row2">
+          <div class="field"><span data-i="link"></span><input id="jsInput" spellcheck="false" placeholder="Server ID, join script or roblox:// link"></div>
+          <button class="btn good" id="btnJoinServer" data-i="play" disabled>Join</button>
+        </div>
+        <div class="status" id="jsStatus"><i class="dot off"></i><span class="t">Paste from the velhub Server Sniper</span></div>
       </section>
 
       <section class="card">
@@ -595,6 +622,8 @@ const theme = {
 try { theme.apply(); } catch (e) {}
 
 const ICONS = {
+  layout: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
   play: '<path d="M6 3.5v17l14-8.5z"/>',
   monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m10 7.5 4 2.5-4 2.5z"/>',
   octagon: '<path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86z"/><path d="m15 9-6 6M9 9l6 6"/>',
@@ -702,7 +731,7 @@ function syncFrame() {
 /* ---------- state ---------- */
 
 function onState(s) {
-  if (dragging) { pendingState = s; return; }
+  if (dragging || (selDrag && selDrag.active)) { pendingState = s; return; }
   S = s;
   document.body.classList.add('ready');
   maybeHideLoader();
@@ -713,6 +742,7 @@ function onState(s) {
   renderPs();
   renderBuild();
   renderLaunch();
+  updateArrangeButton();
   if (settingsRefresh) settingsRefresh();
   const key = JSON.stringify(s.accounts);
   if (key !== accountsKey) { accountsKey = key; renderGroups(); renderAccounts(); }
@@ -1038,7 +1068,79 @@ listEl.addEventListener('pointermove', e => { if (dragging) updateDrag(e.clientY
 listEl.addEventListener('pointerup', () => endDrag(true));
 listEl.addEventListener('pointercancel', () => endDrag(false));
 
+/* ---------- drag to select ----------
+   Press on a row's body and drag up or down to select (or, if the first row was
+   already selected, deselect) every row the drag covers. A plain click still
+   toggles one row; the grip still reorders. */
+let selDrag = null, suppressClick = false;
+function rowAtY(y) {
+  const rows = $$('.row', listEl);
+  for (const r of rows) if (y < r.getBoundingClientRect().bottom) return r;
+  return rows[rows.length - 1] || null;
+}
+function paintSelection(y) {
+  const d = selDrag, rows = $$('.row', listEl), cur = rowAtY(y);
+  if (!d || !cur) return;
+  const a = rows.indexOf(d.anchor), b = rows.indexOf(cur);
+  if (a < 0 || b < 0) return;
+  const lo = Math.min(a, b), hi = Math.max(a, b);
+  sel.clear();
+  for (const id of d.base) sel.add(id);
+  rows.forEach((r, k) => {
+    const inRange = k >= lo && k <= hi;
+    r.classList.toggle('paint', inRange);
+    if (inRange) { const id = +r.dataset.id; d.add ? sel.add(id) : sel.delete(id); }
+  });
+  d.last = +cur.dataset.id;
+  updateSelectionUI();
+}
+function endSelDrag() {
+  const d = selDrag;
+  if (!d) return;
+  selDrag = null;
+  clearInterval(d.timer);
+  document.body.classList.remove('is-selecting');
+  $$('.row.paint', listEl).forEach(r => r.classList.remove('paint'));
+  // Swallow the click that follows a real drag so it doesn't toggle the last row.
+  if (d.active) { suppressClick = true; lastClickId = d.last; setTimeout(() => { suppressClick = false; }, 0); }
+  if (pendingState && !dragging) { const p = pendingState; pendingState = null; onState(p); }
+}
+listEl.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || dragging || e.shiftKey || e.ctrlKey || e.metaKey) return;
+  const row = e.target.closest('.row');
+  if (!row || e.target.closest('.grip, [data-act], button, input, a')) return;
+  selDrag = { anchor: row, startY: e.clientY, y: e.clientY, active: false, add: !sel.has(+row.dataset.id),
+              base: new Set(sel), pointerId: e.pointerId, last: +row.dataset.id };
+});
+listEl.addEventListener('pointermove', e => {
+  const d = selDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  d.y = e.clientY;
+  if (!d.active) {
+    if (Math.abs(e.clientY - d.startY) < 6) return;
+    d.active = true;
+    closePopover();
+    try { listEl.setPointerCapture(e.pointerId); } catch (_) {}
+    document.body.classList.add('is-selecting');
+    if (window.getSelection) window.getSelection().removeAllRanges();
+    // Auto-scroll while the pointer sits near the list's top or bottom edge.
+    d.timer = setInterval(() => {
+      if (!selDrag) return;
+      const r = listEl.getBoundingClientRect(), edge = 40;
+      if (selDrag.y < r.top + edge) listEl.scrollTop -= Math.ceil((r.top + edge - selDrag.y) / 4);
+      else if (selDrag.y > r.bottom - edge) listEl.scrollTop += Math.ceil((selDrag.y - (r.bottom - edge)) / 4);
+      else return;
+      paintSelection(selDrag.y);
+    }, 16);
+  }
+  paintSelection(e.clientY);
+});
+listEl.addEventListener('pointerup', endSelDrag);
+listEl.addEventListener('pointercancel', endSelDrag);
+window.addEventListener('blur', endSelDrag);
+
 listEl.addEventListener('click', e => {
+  if (suppressClick) { suppressClick = false; return; }
   const emptyBtn = e.target.closest('[data-empty]');
   if (emptyBtn) { emptyBtn.dataset.empty === 'login' ? send('login') : pasteModal(); return; }
   const row = e.target.closest('.row');
@@ -1340,6 +1442,77 @@ function buildThemeGrid(container) {
   container.querySelector('[data-custom]').addEventListener('input', ev => { theme.set(null, ev.target.value); buildThemeGrid(container); });
 }
 
+/* ---------- window arrange ---------- */
+const ARRANGE_PRESETS = [
+  { id: 'grid', name: 'Smart grid' },
+  { id: 'columns', name: 'Side by side' },
+  { id: 'rows', name: 'Stacked' },
+  { id: 'focus', name: 'Focus + side' },
+  { id: 'cascade', name: 'Cascade' },
+  { id: 'mini', name: 'Mini tiles' },
+];
+// Tiny SVG preview of each preset with 4 windows (mirrors the layouts in arrange.cpp).
+function arrangePreview(id) {
+  const W = 96, H = 54, g = 3, R = [];
+  const grid = (c, r, n) => { const tw = (W - g * (c + 1)) / c, th = (H - g * (r + 1)) / r;
+    for (let i = 0; i < n; i++) R.push([g + (i % c) * (tw + g), g + Math.floor(i / c) * (th + g), tw, th]); };
+  if (id === 'grid') grid(2, 2, 4);
+  else if (id === 'columns') grid(4, 1, 4);
+  else if (id === 'rows') grid(1, 4, 4);
+  else if (id === 'focus') { const mw = (W - g * 3) * 2 / 3, th = (H - g * 4) / 3; R.push([g, g, mw, H - 2 * g]);
+    for (let i = 0; i < 3; i++) R.push([g * 2 + mw, g + i * (th + g), W - mw - g * 3, th]); }
+  else if (id === 'cascade') for (let i = 0; i < 4; i++) R.push([g + i * 7, g + i * 6, W * 0.6, H * 0.6]);
+  else for (let i = 0; i < 4; i++) R.push([g + (i % 3) * 26, g + Math.floor(i / 3) * 16, 23, 13]);
+  return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${R.map(r => `<rect class="w" x="${r[0].toFixed(1)}" y="${r[1].toFixed(1)}" width="${r[2].toFixed(1)}" height="${r[3].toFixed(1)}" rx="1.5"/>`).join('')}</svg>`;
+}
+function arrangeLabel(id) { const p = ARRANGE_PRESETS.find(x => x.id === id); return p ? p.name : id; }
+function refreshArrange(m) {
+  const a = S && S.arrange;
+  if (!a || !m.querySelector('#arPresets')) return;
+  m.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', b.dataset.preset === a.preset));
+  m.querySelectorAll('[data-gap]').forEach(b => b.classList.toggle('on', +b.dataset.gap === a.gap));
+  const mons = a.monitors || [];
+  m.querySelector('#arMonName').textContent = mons[Math.min(a.monitor, mons.length - 1)] || 'Main display';
+  m.querySelector('#arMon').disabled = mons.length < 2;
+  m.querySelector('#arAuto').classList.toggle('on', !!a.auto);
+  m.querySelector('#arNow').disabled = !a.windows;
+  m.querySelector('#arNowLbl').textContent = a.windows ? `Arrange ${a.windows} window${a.windows === 1 ? '' : 's'}` : 'No Roblox windows open';
+}
+function wireArrange(m) {
+  const grid = m.querySelector('#arPresets');
+  grid.innerHTML = ARRANGE_PRESETS.map(p => `<button class="ar-opt" data-preset="${p.id}" title="${p.name}">${arrangePreview(p.id)}<span>${p.name}</span></button>`).join('');
+  // Picking a preset saves it and re-tiles straight away so the result is visible.
+  grid.onclick = e => { const b = e.target.closest('[data-preset]'); if (!b || !S) return; S.arrange.preset = b.dataset.preset; refreshArrange(m); send('arrangeSet', { preset: b.dataset.preset, apply: S.arrange.windows > 0 }); };
+  m.querySelector('#arGap').onclick = e => { const b = e.target.closest('[data-gap]'); if (!b || !S) return; S.arrange.gap = +b.dataset.gap; refreshArrange(m); send('arrangeSet', { gap: +b.dataset.gap, apply: S.arrange.windows > 0 }); };
+  m.querySelector('#arMon').onclick = e => {
+    if (!S) return;
+    openMenu(e.currentTarget, (S.arrange.monitors || []).map((name, i) => ({
+      icon: 'monitor', label: name, active: i === S.arrange.monitor,
+      on: () => { S.arrange.monitor = i; refreshArrange(m); send('arrangeSet', { monitor: i, apply: S.arrange.windows > 0 }); }
+    })), { width: 300 });
+  };
+  m.querySelector('#arAuto').onclick = () => { if (!S) return; S.arrange.auto = !S.arrange.auto; refreshArrange(m); send('arrangeSet', { auto: S.arrange.auto }); };
+  m.querySelector('#arNow').onclick = () => send('arrange', {});
+  refreshArrange(m);
+}
+function updateArrangeButton() {
+  const a = S && S.arrange, b = $('#btnArrange');
+  if (!a || !b) return;
+  $('#arrangeCount').textContent = a.windows;
+  b.disabled = !a.windows;
+  b.title = a.windows ? `Tile ${a.windows} Roblox window${a.windows === 1 ? '' : 's'} (${arrangeLabel(a.preset)}). Right-click to pick a layout.` : 'No Roblox windows open';
+}
+$('#btnArrange').onclick = () => send('arrange', {});
+$('#btnArrange').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (!S || !S.arrange) return;
+  openMenu(e.currentTarget, ARRANGE_PRESETS.map(p => ({
+    icon: 'layout', label: p.name, active: p.id === S.arrange.preset,
+    on: () => { S.arrange.preset = p.id; send('arrangeSet', { preset: p.id, apply: true }); }
+  })).concat(['-', { icon: 'settings', label: S.arrange.auto ? 'Turn off auto-arrange' : 'Turn on auto-arrange',
+    on: () => { S.arrange.auto = !S.arrange.auto; send('arrangeSet', { auto: S.arrange.auto }); } }]), { width: 240 });
+});
+
 let settingsRefresh = null;
 $('#btnSettings').onclick = () => {
   openModal(`<h3>Settings</h3>
@@ -1354,6 +1527,14 @@ $('#btnSettings').onclick = () => {
         <button class="adapter" id="setAdapter" style="width:100%"><span id="setAdapterName">Loading adapters…</span><span class="mac" id="setAdapterMac"></span><span class="chev" data-i="chevron"></span></button>
         <div class="row2 mt"><button class="btn" id="setSpoof" style="flex:1" data-i="shuffle"><span id="setSpoofLbl">Spoof MAC</span></button><button class="btn" id="setRevert" style="flex:1" data-i="undo">Revert MAC</button></div>
         <div class="s-note" id="setAdminNote" hidden>${icon('shield')}Needs administrator rights — you'll be asked to restart as admin.</div>
+      </section>
+      <section>
+        <div class="s-h">${icon('layout')}Window layout</div>
+        <p class="s-desc">Tiles every open Roblox window neatly across a display, in your account list order. Use <b>Arrange</b> in the top bar, or turn on <b>auto-arrange</b> to re-tile whenever a Roblox window opens or closes.</p>
+        <div class="ar-grid" id="arPresets"></div>
+        <div class="ar-row"><span class="lbl">Spacing</span><div class="ar-seg" id="arGap"><button data-gap="0">None</button><button data-gap="6">Tight</button><button data-gap="14">Roomy</button></div></div>
+        <div class="ar-row"><span class="lbl">Display</span><button class="adapter" id="arMon" style="flex:1"><span id="arMonName">Main display</span><span class="chev" data-i="chevron"></span></button></div>
+        <div class="row2 mt"><button class="btn toggle" id="arAuto" style="flex:1"><span class="sw"></span>Auto-arrange</button><button class="btn primary" id="arNow" data-i="layout" style="flex:1"><span id="arNowLbl">Arrange now</span></button></div>
       </section>
       <section>
         <div class="s-h">${icon('cookie')}Roblox cookies</div>
@@ -1380,6 +1561,7 @@ $('#btnSettings').onclick = () => {
       m.querySelector('#setCookies').disabled = !!n.cookieBusy;
       m.querySelector('#setCookiesLbl').textContent = n.cookieBusy ? 'Clearing…' : 'Clear Roblox cookies';
       m.querySelector('#setAdminNote').hidden = !!S.elevated;
+      refreshArrange(m);
     };
     settingsRefresh = refresh;
     refresh();
@@ -1402,6 +1584,7 @@ $('#btnSettings').onclick = () => {
       if (!S.elevated) { askAdmin('Changing your MAC address'); return; }
       confirmModal({ title: 'Revert MAC address?', html: `<b>${esc(a.name)}</b> goes back to its original hardware MAC and restarts, so your internet drops for a few seconds.`, ok: 'Revert MAC', onOk: () => send('macRevert', { index: netSel }) });
     };
+    wireArrange(m);
     m.querySelector('#setCookies').onclick = () => confirmModal({
       title: 'Clear Roblox cookies?',
       html: 'This wipes the <b>RobloxCookies.dat</b> file for the stock Roblox client and, if installed, Bloxstrap and Fishstrap. Your browser cookies and the accounts saved in this tool are not touched.',
@@ -1460,6 +1643,40 @@ $('#btnBestServer').onclick = () => {
   renderLaunch();
   send('setBestServer', { value: S.bestServer });
 };
+/* Join Server: accepts a bare server ID (uses the Place ID above), the sniper's
+   "Roblox.GameLauncher.joinGameInstance(place, "id")" script, or a roblox:// /
+   roblox.com link carrying placeId + gameInstanceId/gameId. */
+function parseJoinTarget(text) {
+  const t = String(text || '').trim();
+  const g = t.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (!g) return null;
+  const p = t.match(/joinGameInstance\(\s*(\d+)/i) || t.match(/placeId=(\d+)/i) || t.match(/games\/(\d+)/i);
+  const placeId = p ? Number(p[1]) : Number(S && S.placeId) || 0;
+  return { placeId, gameId: g[0].toLowerCase(), fromLink: !!p };
+}
+function renderJoinServer() {
+  const st = $('#jsStatus'), btn = $('#btnJoinServer');
+  const raw = $('#jsInput').value;
+  const j = parseJoinTarget(raw);
+  let h;
+  if (!raw.trim()) h = `<i class="dot off"></i><span class="t">Paste from the velhub Server Sniper</span>`;
+  else if (!j) h = `<i class="dot off"></i><span class="t">No server ID found in that text</span>`;
+  else if (!(j.placeId > 0)) h = `<i class="dot off"></i><span class="t">Set a Place ID above, or paste the join script</span>`;
+  else h = `<i class="dot"></i><span class="t"><b>${esc(j.gameId.slice(0, 8))}…</b><span class="meta">place ${j.placeId}${j.fromLink ? '' : ' (from Place ID)'}</span></span>`;
+  setHTML(st, h);
+  const ok = !!(j && j.placeId > 0);
+  st.classList.toggle('on', ok);
+  btn.disabled = !ok;
+}
+$('#jsInput').addEventListener('input', renderJoinServer);
+$('#jsInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !$('#btnJoinServer').disabled) $('#btnJoinServer').click(); });
+$('#placeId').addEventListener('input', renderJoinServer);
+$('#btnJoinServer').onclick = () => {
+  const j = parseJoinTarget($('#jsInput').value);
+  if (!j || !(j.placeId > 0)) return;
+  send('joinServer', { ids: orderedSelection(), placeId: j.placeId, gameId: j.gameId });
+};
+
 $('#btnRejoin').onclick = () => { if (S && S.lastServer && S.lastServer.has) send('rejoinLast', { ids: orderedSelection() }); };
 
 $('#btnSavedPlaces').onclick = e => openPopover(e.currentTarget, pop => {

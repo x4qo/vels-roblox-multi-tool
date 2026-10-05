@@ -50,7 +50,7 @@ std::vector<BrowserCookieStatus> browserCookieStatus;
 std::atomic<bool> browserCookieScanning{ false };
 std::atomic<bool> browserCookieScanned{ false };
 
-static std::wstring g_exeDir;
+std::wstring g_exeDir;
 static std::thread g_watchThread;
 static std::chrono::steady_clock::time_point g_startTime;
 static std::mutex g_robloxCookieFileMutex;
@@ -150,25 +150,46 @@ static void ReleaseRobloxCookieFileLock() {
     }
 }
 
+// Multi-instance works by *owning* ROBLOX_singletonMutex so no Roblox client can.
+// Ownership belongs to a thread, and it is lost to Roblox whenever a client owned
+// it first and then dies (e.g. Kill All): the mutex is abandoned and the next client
+// to start grabs it, putting Roblox back into single-instance mode. So a dedicated
+// thread that never exits keeps re-trying to take ownership whenever it's free
+// (including WAIT_ABANDONED), and holds it for the life of the tool.
+static std::atomic<bool> g_ownsRobloxMutex{ false };
+
 static void HoldMultiRobloxMutex() {
     if (g_multiRobloxMutex) return;
-
-    g_multiRobloxMutex = CreateMutexW(nullptr, TRUE, L"ROBLOX_singletonMutex");
+    g_multiRobloxMutex = CreateMutexW(nullptr, FALSE, L"ROBLOX_singletonMutex");
     if (!g_multiRobloxMutex) {
         Log("[!] Could not create ROBLOX_singletonMutex: " + LastWin32ErrorString(GetLastError()));
         return;
     }
-
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        Log("[!] ROBLOX_singletonMutex already exists; multi-instance may depend on the watcher.");
-    } else {
-        Log("[v] Holding ROBLOX_singletonMutex for multi-instance launching.");
-    }
+    HANDLE h = g_multiRobloxMutex;
+    std::thread([h]() {
+        bool warned = false;
+        for (;;) {
+            DWORD r = WaitForSingleObject(h, 0);
+            if (r == WAIT_OBJECT_0 || r == WAIT_ABANDONED) {
+                g_ownsRobloxMutex = true;
+                Log(warned ? "[v] Took back ROBLOX_singletonMutex - multi-instance launching works again."
+                           : "[v] Holding ROBLOX_singletonMutex for multi-instance launching.");
+                // Owned for good; this thread must stay alive or ownership is abandoned.
+                for (;;) Sleep(INFINITE);
+            }
+            if (!warned) {
+                warned = true;
+                Log("[i] A running Roblox client holds ROBLOX_singletonMutex; it will be taken over as soon as that client closes.");
+            }
+            Sleep(250);
+        }
+    }).detach();
 }
 
 static void ReleaseMultiRobloxMutex() {
+    // Ownership lives on the keeper thread, so just drop our handle; Windows
+    // releases the mutex (as abandoned) when the tool exits.
     if (!g_multiRobloxMutex) return;
-    ReleaseMutex(g_multiRobloxMutex);
     CloseHandle(g_multiRobloxMutex);
     g_multiRobloxMutex = nullptr;
 }
@@ -208,6 +229,8 @@ void Init(const std::wstring& exeDir) {
     LoadActivePrivateServer();
     LoadJoinBestServer();
     LoadLastServer();
+    LoadArrangeSettings();
+    StartAutoArrangeWatcher();
     LoadRobloxBuilds();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
@@ -398,14 +421,24 @@ void KillAllRobloxInstances() {
         return;
     }
     int closed = 0;
+    std::vector<HANDLE> dying;
     for (DWORD pid : pids) {
-        HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+        HANDLE h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid);
         if (h) {
-            if (TerminateProcess(h, 0)) ++closed;
-            CloseHandle(h);
+            if (TerminateProcess(h, 0)) { ++closed; dying.push_back(h); }
+            else CloseHandle(h);
         }
     }
+    // Termination is asynchronous: wait (briefly) until they're really gone so an
+    // immediate relaunch doesn't race a half-dead client.
+    for (size_t i = 0; i < dying.size(); i += MAXIMUM_WAIT_OBJECTS) {
+        DWORD n = (DWORD)std::min<size_t>(MAXIMUM_WAIT_OBJECTS, dying.size() - i);
+        WaitForMultipleObjects(n, dying.data() + i, TRUE, 4000);
+    }
+    for (HANDLE h : dying) CloseHandle(h);
     Log("[v] Closed " + std::to_string(closed) + " of " + std::to_string(pids.size()) + " Roblox instance(s).");
+    if (!g_ownsRobloxMutex.load())
+        Log("[i] Waiting to take back ROBLOX_singletonMutex so new launches can run side by side...");
 }
 
 std::atomic<bool> uiForeground{ true };
@@ -1097,13 +1130,135 @@ std::vector<RobloxAccount> accounts;
 std::mutex launchedMutex;
 std::map<long long, unsigned long> launchedPids;
 
+// userId -> browserTrackerId of that account's most recent launch. The tracker id
+// ends up on the RobloxPlayerBeta command line (-b, and inside the -j placelauncher
+// url), so it identifies the account's process no matter how or when it started.
+static std::map<long long, std::string> launchedTrackers;
+
+// Reads another process's command line. Needs only PROCESS_QUERY_LIMITED_INFORMATION,
+// so it works without holding any handle from launch time.
+static std::wstring GetProcessCommandLine(DWORD pid) {
+    using NtQIP = LONG(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+    static NtQIP query = (NtQIP)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
+    if (!query) return L"";
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return L"";
+    std::wstring out;
+    ULONG need = 0;
+    const ULONG ProcessCommandLineInformation = 60;
+    query(h, ProcessCommandLineInformation, nullptr, 0, &need);
+    if (need > 0 && need < (1u << 20)) {
+        std::vector<BYTE> buf(need);
+        if (query(h, ProcessCommandLineInformation, buf.data(), need, &need) >= 0) {
+            struct UStr { USHORT Length, MaximumLength; PWSTR Buffer; };
+            auto* s = reinterpret_cast<UStr*>(buf.data());
+            if (s->Buffer && s->Length) out.assign(s->Buffer, s->Length / sizeof(wchar_t));
+        }
+    }
+    CloseHandle(h);
+    return out;
+}
+
+// userId -> when that account was last launched (for the last-resort match below).
+static std::map<long long, std::chrono::steady_clock::time_point> launchedAt;
+
+// RobloxPlayerBeta pid -> its parent pid. Windows keeps the parent id after the
+// parent exits, which is how a relaunched client is traced back to its account.
+static std::map<DWORD, DWORD> RobloxParents() {
+    std::map<DWORD, DWORD> out;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return out;
+    PROCESSENTRY32W pe = { sizeof(pe) };
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (_wcsicmp(pe.szExeFile, L"RobloxPlayerBeta.exe") == 0) out[pe.th32ProcessID] = pe.th32ParentProcessID;
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return out;
+}
+
 void PruneLaunchedPids() {
-    auto alive = FindPidsByName(L"RobloxPlayerBeta.exe");
+    auto parents = RobloxParents();
+    std::vector<DWORD> alive;
+    for (auto& kv : parents) alive.push_back(kv.first);
     std::set<DWORD> aliveSet(alive.begin(), alive.end());
-    std::lock_guard<std::mutex> lk(launchedMutex);
-    for (auto it = launchedPids.begin(); it != launchedPids.end();) {
-        if (!aliveSet.count((DWORD)it->second)) it = launchedPids.erase(it);
+
+    // Command lines never change, so read each process's once.
+    static std::map<DWORD, std::wstring> cmdCache;
+    for (auto it = cmdCache.begin(); it != cmdCache.end();) {
+        if (!aliveSet.count(it->first)) it = cmdCache.erase(it);
         else ++it;
+    }
+
+    std::lock_guard<std::mutex> lk(launchedMutex);
+    std::set<DWORD> claimed;
+    for (auto& kv : launchedPids) if (aliveSet.count((DWORD)kv.second)) claimed.insert((DWORD)kv.second);
+
+    // Roblox often starts a short-lived client that spawns the real game process and
+    // exits a few seconds later. Follow a dead pid to the live process it spawned
+    // (child or grandchild) instead of dropping the account's pid.
+    for (auto it = launchedPids.begin(); it != launchedPids.end();) {
+        DWORD pid = (DWORD)it->second;
+        if (aliveSet.count(pid)) { ++it; continue; }
+        DWORD heir = 0;
+        for (DWORD p : alive) {
+            if (claimed.count(p)) continue;
+            DWORD up = parents[p];
+            for (int depth = 0; depth < 3 && up; ++depth) {
+                if (up == pid) { heir = p; break; }
+                auto pp = parents.find(up);
+                up = pp == parents.end() ? 0 : pp->second;
+            }
+            if (heir) break;
+        }
+        if (heir) { it->second = heir; claimed.insert(heir); ++it; }
+        else it = launchedPids.erase(it);
+    }
+
+    // Fill in any launched account that has no live pid by matching its tracker id.
+    std::set<DWORD> taken;
+    for (auto& kv : launchedPids) taken.insert((DWORD)kv.second);
+    for (auto& kv : launchedTrackers) {
+        if (launchedPids.count(kv.first) || kv.second.empty()) continue;
+        std::wstring tracker(kv.second.begin(), kv.second.end());
+        for (DWORD pid : alive) {
+            if (taken.count(pid)) continue;
+            auto c = cmdCache.find(pid);
+            if (c == cmdCache.end()) {
+                std::wstring cmd = GetProcessCommandLine(pid);
+                if (cmd.empty()) continue;  // still starting or unreadable; retry next pass
+                c = cmdCache.emplace(pid, std::move(cmd)).first;
+            }
+            if (c->second.find(tracker) != std::wstring::npos) {
+                launchedPids[kv.first] = pid;
+                taken.insert(pid);
+                break;
+            }
+        }
+    }
+
+    // Last resort (the game client's command line is usually unreadable): if exactly
+    // one recently launched account is missing a pid and exactly one Roblox game
+    // process is unclaimed, they belong together. Never guess when it's ambiguous.
+    auto now = std::chrono::steady_clock::now();
+    std::vector<long long> missing;
+    for (auto& kv : launchedAt)
+        if (!launchedPids.count(kv.first) && now - kv.second < std::chrono::minutes(3)) missing.push_back(kv.first);
+    if (missing.size() == 1) {
+        std::vector<DWORD> spare;
+        for (DWORD pid : alive) {
+            if (taken.count(pid)) continue;
+            auto c = cmdCache.find(pid);
+            if (c == cmdCache.end()) {
+                std::wstring cmd = GetProcessCommandLine(pid);
+                if (!cmd.empty()) c = cmdCache.emplace(pid, std::move(cmd)).first;
+            }
+            // The Roblox app's background tray process isn't a game client.
+            if (c != cmdCache.end() && c->second.find(L"--launch-to-tray") != std::wstring::npos) continue;
+            spare.push_back(pid);
+        }
+        if (spare.size() == 1) launchedPids[missing[0]] = spare[0];
     }
 }
 
@@ -1111,13 +1266,31 @@ void PruneLaunchedPids() {
 // wasn't present just before. Runs briefly in the background so it doesn't hold
 // up the launch loop.
 static void AssignLaunchedPid(long long userId, std::set<DWORD> before) {
+    std::wstring tracker;
+    {
+        std::lock_guard<std::mutex> lk(launchedMutex);
+        auto t = launchedTrackers.find(userId);
+        if (t != launchedTrackers.end()) tracker.assign(t->second.begin(), t->second.end());
+    }
     for (int i = 0; i < 24; ++i) {
         auto now = FindPidsByName(L"RobloxPlayerBeta.exe");
         DWORD found = 0;
-        for (DWORD p : now) if (!before.count(p)) { found = p; break; }
+        std::set<DWORD> owned;
+        {
+            std::lock_guard<std::mutex> lk(launchedMutex);
+            for (auto& kv : launchedPids) if (kv.first != userId) owned.insert((DWORD)kv.second);
+        }
+        for (DWORD p : now) {
+            if (before.count(p) || owned.count(p)) continue;
+            // A readable command line that lacks our tracker is another account's launch.
+            std::wstring cmd = tracker.empty() ? L"" : GetProcessCommandLine(p);
+            if (!cmd.empty() && cmd.find(tracker) == std::wstring::npos) continue;
+            found = p;
+            break;
+        }
         if (found) {
             std::lock_guard<std::mutex> lk(launchedMutex);
-            launchedPids[userId] = found;
+            if (!launchedPids.count(userId)) launchedPids[userId] = found;
             return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
@@ -1729,6 +1902,12 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
 
     std::set<DWORD> pidsBefore;
     { auto v = FindPidsByName(L"RobloxPlayerBeta.exe"); pidsBefore.insert(v.begin(), v.end()); }
+    {
+        std::lock_guard<std::mutex> lk(launchedMutex);
+        launchedTrackers[account.userId] = browserTrackerId;
+        launchedAt[account.userId] = std::chrono::steady_clock::now();
+        launchedPids.erase(account.userId);  // the old pid belongs to the previous launch
+    }
 
     bool pinnedBuild;
     { std::lock_guard<std::mutex> lock(robloxBuildMutex); pinnedBuild = !robloxBuild.activeVersion.empty(); }
