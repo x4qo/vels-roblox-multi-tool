@@ -262,4 +262,15 @@ int CountRobloxWindows();
 int ArrangeRobloxWindows(const std::string& presetOverride);
 void StartAutoArrangeWatcher();
 
+// Custom Roblox font (fonts.cpp): every font family of each Roblox install is pointed
+// at one user-chosen font file. EnsureCustomFont re-applies it to installs that lack
+// it (Roblox updates into a fresh folder), so it is called before each launch.
+struct CustomFontState { bool enabled = false; bool hasFont = false; std::string name; };
+extern std::mutex customFontMutex;
+extern CustomFontState customFont;
+void LoadCustomFont();
+bool SetCustomFontFile(const std::wstring& path);
+void SetCustomFontEnabled(bool on);
+void EnsureCustomFont();
+
 }

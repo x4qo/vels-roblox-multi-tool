@@ -232,6 +232,7 @@ void Init(const std::wstring& exeDir) {
     LoadArrangeSettings();
     StartAutoArrangeWatcher();
     LoadRobloxBuilds();
+    LoadCustomFont();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
 }
@@ -409,6 +410,7 @@ void StopWatching() {
 
 void LaunchNewInstance() {
     Log("[i] Launching a new Roblox instance...");
+    EnsureCustomFont();
     HINSTANCE r = ShellExecuteW(nullptr, L"open", L"roblox-player:", nullptr, nullptr, SW_SHOWNORMAL);
     if ((INT_PTR)r <= 32) Log("[!] Could not launch via roblox-player: protocol. Is Roblox installed?");
     else Log("[v] Launch requested. If the singleton lock blocks it, the watcher will clear it automatically.");
@@ -1504,6 +1506,7 @@ static bool RefreshStoredAccountCookie(int index, RobloxAccount& account) {
 }
 
 static std::wstring FindRobloxPlayerExe() {
+    EnsureCustomFont();  // every direct launch resolves the exe here first
     {
         std::lock_guard<std::mutex> lock(robloxBuildMutex);
         if (!robloxBuild.activeVersion.empty()) {
@@ -1926,6 +1929,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
     }
 
     int beforeCount = (int)pidsBefore.size();
+    EnsureCustomFont();
     std::wstring wuri(uri.begin(), uri.end());
     HINSTANCE r = ShellExecuteW(nullptr, L"open", wuri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     bool launched = (INT_PTR)r > 32 && WaitForRobloxProcessCountAbove(beforeCount, 5000);
@@ -2032,6 +2036,7 @@ void LaunchAccountClient(int index) {
         launched = LaunchRobloxClientDirect(ticket);
     } else {
         int beforeCount = (int)FindPidsByName(L"RobloxPlayerBeta.exe").size();
+        EnsureCustomFont();
         std::wstring wuri(uri.begin(), uri.end());
         HINSTANCE r = ShellExecuteW(nullptr, L"open", wuri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         launched = (INT_PTR)r > 32 && WaitForRobloxProcessCountAbove(beforeCount, 5000);

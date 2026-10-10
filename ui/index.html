@@ -673,6 +673,7 @@ const ICONS = {
   gauge: '<path d="M12 14a2 2 0 0 0 2-2c0-1.1-2-6-2-6s-2 4.9-2 6a2 2 0 0 0 2 2z"/><path d="M3.5 18a9 9 0 1 1 17 0"/>',
   rewind: '<path d="M11 19 2 12l9-7v14zM22 19l-9-7 9-7v14z"/>',
   folder: '<path d="M4 5h5l2 2.5h9a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
+  type: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
   folderPlus: '<path d="M4 5h5l2 2.5h9a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M12 11v5M9.5 13.5h5"/>'
 };
 const icon = (n, extra = '') => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${ICONS[n] || ''}</svg>`;
@@ -1537,6 +1538,11 @@ $('#btnSettings').onclick = () => {
         <div class="row2 mt"><button class="btn toggle" id="arAuto" style="flex:1"><span class="sw"></span>Auto-arrange</button><button class="btn primary" id="arNow" data-i="layout" style="flex:1"><span id="arNowLbl">Arrange now</span></button></div>
       </section>
       <section>
+        <div class="s-h">${icon('type')}Roblox font</div>
+        <p class="s-desc">Replaces <b>every font</b> in the Roblox client with one of your own (<b>.ttf</b>, <b>.otf</b> or <b>.ttc</b>). It's applied to each Roblox install, including downloaded builds, and re-applied after Roblox updates. Restart Roblox to see a change.</p>
+        <div class="row2"><button class="btn" id="fontPick" data-i="type" style="flex:1;min-width:0"><span id="fontPickLbl" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Choose font…</span></button><button class="btn toggle" id="fontOn" style="flex:1"><span class="sw"></span>Use custom font</button></div>
+      </section>
+      <section>
         <div class="s-h">${icon('cookie')}Roblox cookies</div>
         <p class="s-desc">Wipes the <b>RobloxCookies.dat</b> login file for the stock Roblox client and, if installed, <b>Bloxstrap</b> and <b>Fishstrap</b>. Handy when a client is stuck signed into the wrong account. Your browser cookies and the accounts saved here are <b>not</b> touched.</p>
         <button class="btn amber" id="setCookies" data-i="cookie" style="width:100%"><span id="setCookiesLbl">Clear Roblox cookies</span></button>
@@ -1562,6 +1568,11 @@ $('#btnSettings').onclick = () => {
       m.querySelector('#setCookiesLbl').textContent = n.cookieBusy ? 'Clearing…' : 'Clear Roblox cookies';
       m.querySelector('#setAdminNote').hidden = !!S.elevated;
       refreshArrange(m);
+      const f = S.font || {};
+      m.querySelector('#fontPickLbl').textContent = f.has ? f.name : 'Choose font…';
+      m.querySelector('#fontPick').title = f.has ? 'Pick a different font file' : 'Pick a font file';
+      m.querySelector('#fontOn').classList.toggle('on', !!f.enabled);
+      m.querySelector('#fontOn').disabled = !f.has;
     };
     settingsRefresh = refresh;
     refresh();
@@ -1585,6 +1596,8 @@ $('#btnSettings').onclick = () => {
       confirmModal({ title: 'Revert MAC address?', html: `<b>${esc(a.name)}</b> goes back to its original hardware MAC and restarts, so your internet drops for a few seconds.`, ok: 'Revert MAC', onOk: () => send('macRevert', { index: netSel }) });
     };
     wireArrange(m);
+    m.querySelector('#fontPick').onclick = () => send('fontPick');
+    m.querySelector('#fontOn').onclick = () => { if (!S || !S.font || !S.font.has) return; S.font.enabled = !S.font.enabled; refresh(); send('fontSet', { enabled: S.font.enabled }); };
     m.querySelector('#setCookies').onclick = () => confirmModal({
       title: 'Clear Roblox cookies?',
       html: 'This wipes the <b>RobloxCookies.dat</b> file for the stock Roblox client and, if installed, Bloxstrap and Fishstrap. Your browser cookies and the accounts saved in this tool are not touched.',

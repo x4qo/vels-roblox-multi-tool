@@ -12,6 +12,8 @@ Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a nativ
 
 **Downgrading.** Live, previous and upcoming Windows versions come from the WEAO API. Picking one downloads the packages from Roblox's deployment CDN the same way rdd.weao.gg does, unpacks them into `Builds\<version-hash>` next to the exe, and writes the `AppSettings.xml` the client needs. A switch decides whether launches use that build or your normal install, so deleting the folder is all it takes to undo.
 
+**Custom font.** Settings → Roblox font takes a `.ttf`, `.otf` or `.ttc` and uses it for all text in the client. The font is copied to `content\fonts\CustomFont.ttf` in every Roblox install (system installs and downloaded builds) and each file in `content\fonts\families` is pointed at it. The untouched family files are kept in `families.velsbak`, so switching it off puts them back. Roblox updates land in a new folder, so the font is re-applied at startup and before each launch.
+
 **Cleanup.** Clears `RobloxCookies.dat` and can lock it, and scans browsers for leftover Roblox cookies. MAC spoofing lists adapters and restores the original address.
 
 Admin rights are requested when a feature needs them, not at startup.
@@ -109,6 +111,8 @@ places.dat           Named place presets
 privateserver.dat    Active private server
 privateservers.dat   Named private server presets
 activebuild.dat      Which downloaded build to launch, if any
+font.dat             Custom font on/off and its name
+customfont.ttf       Copy of the chosen Roblox font
 Builds/              Downloaded Roblox clients, one folder per version
 chrome_login_data/   Temporary Chrome login profiles
 webview2_data/       Runtime browser data, if created

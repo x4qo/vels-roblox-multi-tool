@@ -19,6 +19,9 @@ privateservers.dat
 activebuild.dat
 joinbest.dat
 lastserver.dat
+arrange.dat
+font.dat
+customfont.ttf
 *.preidle.bak
 *.v3.bak
 

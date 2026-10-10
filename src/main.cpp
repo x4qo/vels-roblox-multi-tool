@@ -177,6 +177,20 @@ static std::wstring OpenCookieFileDialog(HWND owner) {
     return L"";
 }
 
+static std::wstring OpenFontFileDialog(HWND owner) {
+    wchar_t file[2048] = L"";
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = L"Fonts (*.ttf, *.otf, *.ttc)\0*.ttf;*.otf;*.ttc\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 2048;
+    ofn.lpstrTitle = L"Choose a font for Roblox";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_EXPLORER;
+    if (GetOpenFileNameW(&ofn)) return std::wstring(file);
+    return L"";
+}
+
 static void ImportCookieLines(const std::string& data, const std::string& source) {
     int added = 0, tried = 0;
     size_t start = 0;
@@ -405,6 +419,11 @@ static std::string BuildStateJson() {
         o += "]}";
     }
     {
+        std::lock_guard<std::mutex> lock(backend::customFontMutex);
+        o += std::string(",\"font\":{\"enabled\":") + B(backend::customFont.enabled) +
+             ",\"has\":" + B(backend::customFont.hasFont) + ",\"name\":" + Quote(backend::customFont.name) + "}";
+    }
+    {
         std::lock_guard<std::mutex> lock(backend::lastServerMutex);
         o += ",\"lastServer\":{\"placeId\":" + N(backend::lastServer.placeId) +
              std::string(",\"has\":") + B(backend::lastServer.placeId > 0 && !backend::lastServer.gameId.empty()) + "}";
@@ -577,6 +596,12 @@ static void HandlePageMessage(const std::string& text) {
         // Re-tile straight away so the change is visible (and when auto just turned on).
         if (m["apply"].boolean() || (s.autoArrange && !wasAuto))
             std::thread([]() { backend::ArrangeRobloxWindows(""); }).detach();
+    } else if (cmd == "fontPick") {
+        std::wstring path = OpenFontFileDialog(g_hwnd);
+        if (!path.empty()) std::thread([path]() { backend::SetCustomFontFile(path); }).detach();
+    } else if (cmd == "fontSet") {
+        bool on = m["enabled"].boolean();
+        std::thread([on]() { backend::SetCustomFontEnabled(on); }).detach();
     } else if (cmd == "setBestServer") {
         backend::SetJoinBestServer(m["value"].boolean());
     } else if (cmd == "joinServer") {
