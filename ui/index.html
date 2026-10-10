@@ -603,10 +603,19 @@ html[data-anon="on"] em.anon-t::after{content:"hidden account";font-size:11px;co
 html[data-anon="on"] span.anon-t::after{content:"Hidden account";font-size:12.5px}
 html[data-anon="on"] .row img.av{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' fill='%231d1f25'/%3E%3Ccircle cx='18' cy='14' r='5.5' fill='%23666b77'/%3E%3Cpath d='M7 33c.8-7 5.4-10 11-10s10.2 3 11 10z' fill='%23666b77'/%3E%3C/svg%3E")}
 html[data-anon="on"] .row div.av{font-size:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' fill='%231d1f25'/%3E%3Ccircle cx='18' cy='14' r='5.5' fill='%23666b77'/%3E%3Cpath d='M7 33c.8-7 5.4-10 11-10s10.2 3 11 10z' fill='%23666b77'/%3E%3C/svg%3E");background-size:cover}
-.split{display:inline-flex}
+.split{display:inline-flex;align-items:stretch}
+.split>.btn{height:34px!important}
+.split>.btn:disabled{opacity:1;color:var(--dim)}
+.split>.btn:disabled .count{opacity:.6}
 .split>.btn:first-child{border-top-right-radius:0!important;border-bottom-right-radius:0!important}
 .split>.btn:last-child{border-top-left-radius:0!important;border-bottom-left-radius:0!important;margin-left:-1px;width:26px;padding:0}
 .split>.btn:last-child .i{width:13px;height:13px}
+.pop{max-height:min(420px,calc(100vh - 24px));overflow-y:auto}
+.mi{flex:none}
+.mi-av{flex:none;width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--hover);border:1px solid var(--line2);display:grid;place-items:center;font-size:10.5px;color:var(--muted)}
+html[data-anon="on"] .mi img.mi-av{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' fill='%231d1f25'/%3E%3Ccircle cx='18' cy='14' r='5.5' fill='%23666b77'/%3E%3Cpath d='M7 33c.8-7 5.4-10 11-10s10.2 3 11 10z' fill='%23666b77'/%3E%3C/svg%3E")}
+html[data-anon="on"] .mi span.mi-av{font-size:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' fill='%231d1f25'/%3E%3Ccircle cx='18' cy='14' r='5.5' fill='%23666b77'/%3E%3Cpath d='M7 33c.8-7 5.4-10 11-10s10.2 3 11 10z' fill='%23666b77'/%3E%3C/svg%3E");background-size:cover}
+html[data-anon="on"] .pop .mi .t.anon-t{flex:1}
 </style>
 </head>
 <body>
@@ -1424,7 +1433,10 @@ function openMenu(anchor, items, opts) {
       if (it === '-') { pop.insertAdjacentHTML('beforeend', '<div class="sep"></div>'); continue; }
       const el = document.createElement('div');
       el.className = 'mi' + (it.danger ? ' danger' : '') + (it.disabled ? ' disabled' : '') + (it.active ? ' active' : '');
-      el.innerHTML = `${icon(it.icon || 'dot')}<span class="t">${esc(it.label)}</span>${it.meta ? `<span class="meta">${esc(it.meta)}</span>` : ''}`;
+      const lead = it.account
+        ? (it.account.avatar && !DEMO ? `<img class="mi-av" src="${HOST}avatar/${it.account.id}" alt="" draggable="false">` : `<span class="mi-av">${esc(String(it.label).charAt(0).toUpperCase())}</span>`)
+        : icon(it.icon || 'dot');
+      el.innerHTML = `${lead}<span class="t${it.account ? ' anon-t' : ''}">${esc(it.label)}</span>${it.meta ? `<span class="meta">${esc(it.meta)}</span>` : ''}`;
       el.onclick = () => { closePopover(); if (it.on) it.on(); };
       pop.appendChild(el);
     }
@@ -1966,7 +1978,7 @@ $('#btnFriends').onclick = () => {
             ${f.gameId ? `<button class="btn sm good" data-join="${esc(f.gameId)}" data-place="${f.placeId}">${icon('play')}Join</button>` : '<span class="fr-off" title="This friend doesn\'t let others join their game">Joins off</span>'}</div>`).join('');
     };
     m.querySelector('#frWho').onclick = e => openMenu(e.currentTarget, S.accounts.map(a => ({
-      icon: 'user', label: a.alias || a.username, active: a.id === who, on: () => { who = a.id; load(); render(); }
+      account: a, label: a.alias || a.username, active: a.id === who, on: () => { who = a.id; load(); render(); }
     })), { width: 300 });
     m.querySelector('#frReload').onclick = () => { load(); render(); };
     m.querySelector('#frList').onclick = e => {
@@ -2031,7 +2043,7 @@ $('#btnPlaytime').onclick = () => {
       }).join('') : '<div class="hist-empty">Nothing yet. Time is counted from the next game you launch from here.</div>';
     };
     m.querySelector('#ptWho').onclick = e => openMenu(e.currentTarget, [{ icon: 'users', label: 'All accounts', active: !who, on: () => { who = 0; render(); } }, '-']
-      .concat(S.accounts.map(a => ({ icon: 'user', label: a.alias || a.username, active: a.id === who, on: () => { who = a.id; render(); } }))), { width: 300 });
+      .concat(S.accounts.map(a => ({ account: a, label: a.alias || a.username, active: a.id === who, on: () => { who = a.id; render(); } }))), { width: 300 });
     m.querySelector('[data-clear]').onclick = () => confirmModal({ title: 'Reset playtime?', html: 'All recorded playtime for every account and game is erased.', ok: 'Reset', danger: true, onOk: () => send('playtimeClear') });
     m.querySelector('[data-x]').onclick = () => { playtimeRefresh = null; close(); };
     playtimeRefresh = render;
