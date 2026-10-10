@@ -51,7 +51,20 @@ static bool LooksLikeRealSecurityCookie(const std::string& value) {
     return value.size() > 100 && value.find("WARNING:-DO-NOT-SHARE-THIS") != std::string::npos;
 }
 
+static std::wstring ChromeFromRegistry() {
+    for (HKEY root : { HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE }) {
+        wchar_t path[MAX_PATH];
+        DWORD size = sizeof(path);
+        if (RegGetValueW(root, L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe", nullptr,
+                         RRF_RT_REG_SZ, nullptr, path, &size) == ERROR_SUCCESS && std::filesystem::exists(path))
+            return path;
+    }
+    return L"";
+}
+
 static std::wstring FindChromeExe() {
+    wchar_t off[4];
+    if (GetEnvironmentVariableW(L"VELS_NO_CHROME", off, 4) > 0) return L"";
     const wchar_t* envVars[] = { L"ProgramFiles", L"ProgramFiles(x86)", L"LOCALAPPDATA" };
     for (auto* envVar : envVars) {
         wchar_t buf[MAX_PATH];
@@ -60,8 +73,10 @@ static std::wstring FindChromeExe() {
         std::wstring candidate = std::wstring(buf) + L"\\Google\\Chrome\\Application\\chrome.exe";
         if (std::filesystem::exists(candidate)) return candidate;
     }
-    return L"";
+    return ChromeFromRegistry();
 }
+
+bool ChromeInstalled() { return !FindChromeExe().empty(); }
 
 static std::wstring MakeLoginProfileDir(const std::wstring& exeDir) {
     auto ticks = std::chrono::duration_cast<std::chrono::milliseconds>(

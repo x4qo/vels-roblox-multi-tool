@@ -4,7 +4,7 @@ Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a nativ
 
 ## Features
 
-**Multiple clients.** Toggling Multi Instance holds the singleton mutex and closes any `ROBLOX_singletonEvent` handles, which is what lets a second client start at all. Running instances are counted live.
+**Multiple clients.** Toggling Multi Instance holds the singleton mutex and closes any `ROBLOX_singletonEvent` handles, which is what lets a second client start at all. The handles are closed from user mode (duplicate-and-close), with `handle64.exe` only as a fallback when a client can't be opened that way. Running instances are counted live.
 
 **Accounts.** Add them by logging in through Chrome, pasting cookies, or loading a cookie file. The store is encrypted with Windows DPAPI, so `accounts.dat` only decrypts on the machine that wrote it. Each account keeps its avatar, stats, an optional alias and password, and a menu to copy its cookie, `user:pass`, username or password.
 
@@ -13,6 +13,16 @@ Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a nativ
 **Downgrading.** Live, previous and upcoming Windows versions come from the WEAO API. Picking one downloads the packages from Roblox's deployment CDN the same way rdd.weao.gg does, unpacks them into `Builds\<version-hash>` next to the exe, and writes the `AppSettings.xml` the client needs. A switch decides whether launches use that build or your normal install, so deleting the folder is all it takes to undo.
 
 **Custom font.** Settings → Roblox font takes a `.ttf`, `.otf` or `.ttc` and uses it for all text in the client. The font is copied to `content\fonts\CustomFont.ttf` in every Roblox install (system installs and downloaded builds) and each file in `content\fonts\families` is pointed at it. The untouched family files are kept in `families.velsbak`, so switching it off puts them back. Roblox updates land in a new folder, so the font is re-applied at startup and before each launch. If Bloxstrap or Fishstrap is installed, the font is also placed in its `Modifications` folder so it wins over a font set there; that font is kept and put back when you switch this off.
+
+**FPS limit per account.** Right-click an account → FPS limit. Roblox reads its frame cap from a settings file every client shares, so the wanted value is written just before that account starts; accounts without a limit get your own setting back.
+
+**Cursor, shift-lock cursor and death sound.** Settings → Cursor and sounds replaces them with your own `.png` / `.ogg`, in every install (and in the `Modifications` folder of Bloxstrap/Fishstrap). The originals are kept beside them as `.velsbak`.
+
+**Fast flags.** Settings → Fast flags edits the 18 flags on Roblox's local allowlist and writes them to `ClientSettings\ClientAppSettings.json` in each install. Flags outside the allowlist are ignored by Roblox and are not offered.
+
+**Server history.** The History button lists servers your accounts joined (found through each account's own presence a few seconds after it joins) and can send accounts back in.
+
+**Discord Rich Presence.** Off by default. Shows the launched game on your Discord profile with the game's thumbnail, through the Discord desktop app's local pipe.
 
 **Updates.** Settings → Updates compares the running exe with the prebuilt one on GitHub by git blob hash. Updating downloads it, verifies the hash, swaps it in (the old exe is kept as `VelsMultiTool.exe.old` until the next start) and restarts. The same check runs at startup and offers the update in a dialog. "Do not show this again" turns that off, and the **Auto-update** switch (off by default) installs new builds without asking; both are stored in `update.dat`. A local build newer than the one on GitHub is never replaced.
 
@@ -47,7 +57,7 @@ This fetches `VelsMultiTool.exe` and `handle64.exe` into `%LOCALAPPDATA%\VelsMul
 - Roblox Player
 - Administrator rights for MAC spoofing and singleton-handle cleanup
 - MinGW-w64 with `g++` and `windres` on `PATH`
-- `handle64.exe` next to `VelsMultiTool.exe` for watcher-based singleton handle cleanup
+- `handle64.exe` next to `VelsMultiTool.exe` (optional fallback for singleton handle cleanup)
 
 The build script suggests installing MinGW-w64 with:
 

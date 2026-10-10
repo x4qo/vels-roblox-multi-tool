@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 
-// Minimal JSON reader/writer for the messages exchanged with the WebView UI.
 namespace json {
 
 struct Value {

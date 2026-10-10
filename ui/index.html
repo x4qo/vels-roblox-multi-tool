@@ -8,7 +8,7 @@
   --bg:#0b0c0e;--bg2:#0f1013;--panel:#131418;--panel2:#181a1f;--hover:#1e2026;--line:#212329;--line2:#2c2f37;
   --text:#f2f4f7;--soft:#d3d7de;--muted:#a6acb8;--dim:#7c8290;
   --top-bg:#0e0f12;--toolbar-bg:#0d0e11;--brand-bg:#17191d;--sk-bg:#1c1e23;
-  --silver1:#f5f6f8;--silver2:#b6bac2;--accent-ink:#101114;
+  --glow:color-mix(in srgb,var(--silver1) 13%,transparent);--glow2:color-mix(in srgb,var(--silver1) 20%,transparent);--silver1:#f5f6f8;--silver2:#b6bac2;--accent-ink:#101114;
   --green:#43d18f;--red:#f06b6b;--amber:#f2b552;--blue:#6fa8ff;
   --r:14px
 }
@@ -17,7 +17,6 @@ html,body{height:100%;margin:0}
 @media (prefers-reduced-motion:no-preference){
   .side,.list,.pop-list,textarea{scroll-behavior:smooth}
 }
-/* theme swaps and colour changes glide instead of snapping */
 .top,.toolbar,.card,.accounts,.acc-h,.acc-foot,.thead,.field,.chip,.status,.brand-mark,.buildrow,.adapter,.tile,.pchip,body{
   transition:background-color .3s ease,border-color .3s ease,color .25s ease}
 body{background:var(--bg);color:var(--text);font:13.5px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;text-rendering:optimizeLegibility;font-optical-sizing:auto;-webkit-font-smoothing:antialiased}
@@ -38,7 +37,6 @@ b,strong{font-weight:700}
 .adapter .mac{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:auto}
 .adapter .i{width:14px;height:14px;color:var(--dim);flex:none}
 
-/* top bar */
 .top{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--top-bg)}
 .brand{display:flex;align-items:center;gap:12px;flex:none}
 .brand-mark{width:42px;height:42px;display:grid;place-items:center;flex:none}
@@ -53,7 +51,6 @@ b,strong{font-weight:700}
 .spacer{flex:1}
 .actions{display:flex;gap:8px;flex:none}
 
-/* buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--line2);background:var(--panel2);color:var(--text);font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s,color .12s,box-shadow .12s,transform .06s}
 .btn:hover{background:var(--hover);border-color:#3a3e47}
 .btn:active{transform:translateY(1px)}
@@ -81,7 +78,6 @@ b,strong{font-weight:700}
 .btn.toggle.on .sw{background:var(--green)}
 .btn.toggle.on .sw::after{left:14px;background:#fff}
 
-/* layout */
 .layout{display:grid;grid-template-columns:minmax(330px,372px) minmax(0,1fr);gap:16px;padding:16px 20px;min-height:0}
 .side{display:flex;flex-direction:column;gap:12px;overflow-y:auto;min-height:0;padding-right:6px;margin-right:-6px;overscroll-behavior:contain}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;flex:none}
@@ -102,7 +98,6 @@ b,strong{font-weight:700}
 .credit{margin-top:auto;padding:6px 0 2px;text-align:center;color:var(--dim);font-size:11px;font-weight:500}
 .credit b{color:var(--muted);font-weight:650}
 
-/* place */
 .place{display:flex;gap:14px;align-items:center;min-height:88px}
 .place-icon{width:88px;height:88px;border-radius:16px;flex:none;background:var(--bg2);border:1px solid var(--line2);display:grid;place-items:center;color:var(--dim);overflow:hidden;box-shadow:0 10px 24px -14px #000}
 .place-icon img{width:100%;height:100%;object-fit:cover;display:block}
@@ -124,11 +119,6 @@ b,strong{font-weight:700}
 .shimmer,.sk{background:var(--sk-bg);animation:pulse 1.4s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.45}}
 
-/* The loader covers start-up, so the app itself does not fade - a steady
-   opacity:1 with no compositing layer lets text render as crisply as WebView2
-   allows (an opacity<1 layer forces blurrier grayscale text). */
-
-/* loading screen */
 #loader{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:var(--bg);transition:opacity .45s ease,visibility .45s}
 #loader.gone{opacity:0;visibility:hidden}
 .load-in{display:flex;flex-direction:column;align-items:center;gap:28px;animation:load-enter .5s cubic-bezier(.2,.7,.3,1) both}
@@ -153,7 +143,6 @@ b,strong{font-weight:700}
 .wait-card p{color:var(--muted);font-size:12.5px;margin:0;line-height:1.5}
 .spin.lg{width:20px;height:20px;border-width:2.5px;margin:0}
 
-/* best-ping server toggle */
 .serverline{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line2);background:var(--bg2);cursor:pointer;text-align:left;transition:background .12s,border-color .12s}
 .serverline:hover{background:var(--hover);border-color:#3a3e47}
 .serverline.on{border-color:#1f5a3f;background:#0f1c16}
@@ -164,7 +153,6 @@ b,strong{font-weight:700}
 .sl-t span{font-size:11px;color:var(--muted)}
 .serverline .switch{pointer-events:none}
 
-/* place name & favourites */
 .btn.fav-btn{width:34px;padding:0;color:var(--dim);flex:none}
 .btn.fav-btn:hover{color:var(--amber)}
 .btn.fav-btn.on{color:var(--amber);border-color:#5a4520;background:#211a10}
@@ -182,7 +170,6 @@ b,strong{font-weight:700}
 .mi .fav.on .i{fill:var(--amber)}
 .mi .x[data-ren]:hover{color:var(--text);background:#2a2d34}
 
-/* private server */
 .status{display:flex;align-items:center;gap:6px;height:36px;padding:0 5px 0 11px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);color:var(--muted);font-weight:500;margin-top:8px;min-width:0}
 .status .t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .status .t b{color:var(--text);font-weight:700}
@@ -191,7 +178,6 @@ b,strong{font-weight:700}
 .spin{width:13px;height:13px;border:2px solid #ffffff22;border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;flex:none;margin-right:4px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* add accounts */
 .add-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;height:70px;border-radius:11px;border:1px solid var(--line2);background:var(--panel2);cursor:pointer;font-weight:650;font-size:12px;transition:background .12s,border-color .12s,transform .06s}
 .tile:hover{background:var(--hover);border-color:#3a3e47}
@@ -200,14 +186,37 @@ b,strong{font-weight:700}
 .tile .i{width:18px;height:18px}
 .tile.g .i{color:var(--green)}.tile.a .i{color:var(--amber)}.tile.b .i{color:var(--blue)}
 
-/* client build */
 .verbtn{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:11.5px;font-weight:600}
 .bstat{display:flex;justify-content:space-between;gap:10px;margin-top:12px;font-size:12px;color:var(--muted)}
 .bstat .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bstat b{color:var(--text)}
 .progress{height:6px;border-radius:4px;background:var(--bg2);overflow:hidden;margin-top:7px;border:1px solid var(--line)}
 .progress i{display:block;height:100%;background:var(--silver1);border-radius:4px;transition:width .3s}
-/* update prompt */
+.fpspill{flex:none;height:17px;padding:0 7px;border-radius:5px;background:#1b1a12;border:1px solid #5a4a1f;color:var(--amber);font-size:10px;display:inline-flex;align-items:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mod-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.mod-row .lbl{display:flex;align-items:center;gap:7px;width:132px;flex:none;font-size:12.5px;color:var(--soft)}
+.mod-row .lbl .i{width:14px;height:14px;color:var(--muted)}
+.mod-row .btn{min-width:0}
+.mod-row .btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ff-list{display:flex;flex-direction:column;gap:2px;max-height:min(56vh,520px);overflow-y:auto;margin:0 -6px;padding:0 6px}
+.ff-h{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim);margin:14px 0 4px}
+.ff-h:first-child{margin-top:2px}
+.ff-row{display:flex;align-items:center;gap:12px;padding:7px 8px;border-radius:9px;transition:background .15s}
+.ff-row:hover{background:var(--bg2)}
+.ff-row.set{background:var(--bg2)}
+.ff-row .txt{flex:1;min-width:0}
+.ff-row .txt b{display:block;font-size:12.5px;color:var(--text)}
+.ff-row .txt code{display:block;font-size:10.5px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ff-row .ar-seg{flex:none;width:168px}
+.ff-row .ar-seg button{padding:5px 0;font-size:11.5px}
+.ff-row .field{flex:none;width:168px;height:30px}
+.ff-row .field input{text-align:right}
+.hist{display:flex;flex-direction:column;gap:6px;max-height:min(60vh,540px);overflow-y:auto;margin:0 -6px;padding:0 6px}
+.hist-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:11px;border:1px solid var(--line);background:var(--bg2)}
+.hist-row .txt{flex:1;min-width:0}
+.hist-row .txt b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-row .txt span{display:block;font-size:11px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-empty{padding:28px 0;text-align:center;color:var(--muted);font-size:12.5px}
 .upd{text-align:center;padding:6px 4px 0}
 .upd-ic{width:52px;height:52px;border-radius:15px;display:grid;place-items:center;margin:0 auto 14px;background:#10201a;border:1px solid #1f5a3f;color:var(--green);transition:background .3s,border-color .3s,color .3s}
 .upd-ic .i{width:24px;height:24px}
@@ -237,7 +246,6 @@ b,strong{font-weight:700}
 .switch.on{background:var(--green)}
 .switch.on::after{left:17px;background:#fff}
 
-/* accounts */
 .accounts{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .acc-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .acc-h h2{margin:0;font-size:15px;font-weight:800;letter-spacing:-.015em}
@@ -303,7 +311,6 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .empty p{margin:0 0 16px;color:var(--muted);max-width:320px}
 .empty.small{min-height:140px;color:var(--muted)}
 
-/* popovers & menus */
 .pop{position:fixed;z-index:80;min-width:210px;max-width:360px;background:#16181d;border:1px solid var(--line2);border-radius:12px;padding:5px;box-shadow:0 22px 48px -14px #000e,0 0 0 1px #00000060;animation:pop .12s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(-4px) scale(.985)}}
 .pop-list{max-height:260px;overflow-y:auto}
@@ -336,15 +343,54 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .pop-form{display:flex;gap:6px;padding:4px}
 .pop-form .field{height:30px}
 
-/* modals */
 .modal-bg{position:fixed;inset:0;background:#05060799;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);display:grid;place-items:center;z-index:60;animation:fade .16s;padding:20px}
 @keyframes fade{from{opacity:0}}
 .modal{width:min(460px,92vw);max-height:calc(100vh - 40px);overflow-y:auto;background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:20px;box-shadow:0 30px 70px -20px #000;animation:pop .16s ease-out}
 .modal.wide{width:min(560px,94vw)}
 
-/* settings sections */
+.modal.set{width:min(680px,94vw);height:min(500px,calc(100vh - 40px));padding:0;display:grid;grid-template-columns:172px 1fr;overflow:hidden}
+.snav{display:flex;flex-direction:column;gap:2px;padding:14px 8px;background:var(--bg2);border-right:1px solid var(--line)}
+.snav-t{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);padding:2px 10px 10px}
+.snav-i{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border:0;border-radius:8px;background:none;color:var(--muted);font:inherit;font-size:12.5px;cursor:pointer;text-align:left;position:relative;transition:background .18s,color .18s}
+.snav-i .i{width:15px;height:15px;flex:none;transition:filter .18s}
+.snav-i:hover{color:var(--text);background:var(--hover)}
+.snav-i.on{color:var(--text);background:var(--hover);text-shadow:0 0 16px var(--glow2)}
+.snav-i.on .i{filter:drop-shadow(0 0 6px var(--glow2))}
+.snav-i.on::before{content:"";position:absolute;left:-8px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--silver1);box-shadow:0 0 14px var(--glow2)}
+.sbody{display:flex;flex-direction:column;min-width:0;min-height:0}
+.shead{display:flex;align-items:center;gap:10px;padding:13px 12px 11px 18px;border-bottom:1px solid var(--line)}
+.shead div{flex:1;min-width:0}
+.shead b{display:block;font-size:14px}
+.shead span{display:block;font-size:11.5px;color:var(--muted);margin-top:1px}
+.spanes{flex:1;overflow-y:auto;padding:10px 18px 16px}
+.spane{display:none;animation:upd-in .22s cubic-bezier(.3,.7,.3,1)}
+.spane.on{display:block}
+.srow{display:flex;align-items:center;gap:12px;min-height:44px;padding:6px 0;border-bottom:1px solid var(--line)}
+.srow .st{flex:1;min-width:0}
+.srow .st b{display:block;font-size:12.5px}
+.srow .st span{display:block;font-size:11px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .sc{display:flex;align-items:center;gap:6px;flex:none;max-width:58%}
+.srow .sc .btn.sm{max-width:190px}
+.srow .sc .btn.sm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srow .sc .ar-seg{width:210px}
+.srow .sc .ar-seg button{padding:5px 0}
+.srow .sc .adapter{height:30px;max-width:230px}
+.slabel{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin:14px 0 4px}
+.spane > .slabel:first-child{margin-top:4px}
+.sfull{width:100%;margin-top:10px}
+.srow[hidden]{display:none}
+.tfield{width:74px;height:30px;flex:none;gap:4px}
+.tfield input{text-align:right}
+.tfield i{font-style:normal;color:var(--dim);font-size:11.5px}
+.spane .ar-grid{margin:2px 0 4px}
+.spane .theme-grid{padding:2px 0;grid-template-columns:repeat(3,1fr)}
+.btn.toggle.bare{border:0;background:none;padding:4px 0;height:auto;min-width:0}
+.btn.toggle.bare.on{background:none}
+.btn.primary{box-shadow:0 0 20px var(--glow)}
+.btn.primary:hover:not(:disabled){box-shadow:0 0 26px var(--glow2)}
+.btn.toggle.on .sw{box-shadow:0 0 14px color-mix(in srgb,var(--green) 38%,transparent)}
+.theme-opt.on,.ar-opt.on{box-shadow:0 0 22px var(--glow)}
 .settings{display:flex;flex-direction:column;gap:6px}
-/* window arrange */
 .ar-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .ar-opt{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:8px;border-radius:9px;border:1px solid var(--line2);background:var(--bg2);cursor:pointer;color:var(--muted);font:inherit;font-size:12px;font-weight:600;text-align:left;transition:border-color .15s,color .15s,background .15s}
 .ar-opt:hover{color:var(--text);border-color:#3a3d45}
@@ -358,7 +404,6 @@ body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .ar-seg button{flex:1;border:0;background:var(--bg2);color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:6px 0;cursor:pointer}
 .ar-seg button+button{border-left:1px solid var(--line2)}
 .ar-seg button.on{background:#1c1e24;color:var(--text)}
-/* drag-to-select */
 body.is-selecting,body.is-selecting *{user-select:none!important}
 .row.paint{background:#1a1c22}
 .settings section{padding:15px 0;border-top:1px solid var(--line)}
@@ -369,6 +414,7 @@ body.is-selecting,body.is-selecting *{user-select:none!important}
 .s-desc b{color:var(--soft)}
 .s-note{display:inline-flex;align-items:center;gap:5px;margin-top:9px;color:var(--dim);font-size:11px}
 .s-note .i{width:12px;height:12px}
+.s-note[hidden]{display:none}
 .modal h3{margin:0 0 4px;font-size:16px;font-weight:800;letter-spacing:-.015em}
 .modal p{margin:0 0 14px;color:var(--muted)}
 .modal p b{color:var(--text)}
@@ -377,13 +423,11 @@ body.is-selecting,body.is-selecting *{user-select:none!important}
 .modal .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 .check{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted);cursor:pointer}
 
-/* custom tooltip */
 #tip{position:fixed;z-index:300;pointer-events:none;max-width:250px;padding:6px 10px;border-radius:8px;background:#0a0b0d;border:1px solid var(--line2);color:var(--soft);font-size:11.5px;font-weight:600;line-height:1.42;box-shadow:0 10px 26px -10px #000,0 0 0 1px #00000055;white-space:pre-line;opacity:0;transform:translateY(5px) scale(.94);transform-origin:top center;transition:opacity .14s ease,transform .16s cubic-bezier(.2,.85,.3,1)}
 #tip.show{opacity:1;transform:none}
 #tip.above{transform-origin:bottom center;transform:translateY(-5px) scale(.94)}
 #tip.above.show{transform:none}
 
-/* group filter bar */
 .groupbar{display:flex;align-items:center;gap:7px;padding:11px 16px;flex-wrap:wrap;background:var(--bg2);border-bottom:1px solid var(--line)}
 .groupbar:empty{display:none;padding:0;border:0}
 .groupbar::before{content:"Groups";color:var(--dim);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-right:2px}
@@ -395,7 +439,6 @@ body.is-selecting,body.is-selecting *{user-select:none!important}
 .gchip .gplay:hover{color:var(--green);background:#10201a}
 .gchip .gplay .i{width:12px;height:12px}
 
-/* toasts */
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:70;pointer-events:none;align-items:flex-end}
 .toast{display:flex;align-items:center;gap:9px;max-width:400px;padding:10px 14px 10px 12px;border-radius:11px;background:#17191ef2;border:1px solid var(--line2);box-shadow:0 14px 34px -12px #000;font-weight:550;animation:tin .18s ease-out;transition:opacity .2s,transform .2s}
 .toast .i{width:16px;height:16px}
@@ -404,10 +447,6 @@ body.is-selecting,body.is-selecting *{user-select:none!important}
 .toast.out{opacity:0;transform:translateY(6px)}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
 
-/* Every piece of text is Segoe UI, the Windows system font: it is hinted for
-   Windows text rendering, so small sizes stay crisp where an embedded web font
-   (this used to be Inter, all semibold) came out soft and jagged. Medium base,
-   semibold for names, values and buttons, bold display cut for headings. */
 *,*::before,*::after,input::placeholder,textarea::placeholder{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif!important;font-weight:500!important}
 .nm,.btn,.chip b,.pstats b,.acc-h h2,.card-h h2,.brand h1,.n,.ord,.mi,.menu,b,strong,.tag,.status .t b,.place-by b,.subplace b,.count,.selinfo b{font-weight:600!important}
 h1,h2,h3,.place-name,.load-title{font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif!important;font-weight:700!important}
@@ -418,6 +457,156 @@ h1,h2,h3,.place-name,.load-title{font-family:"Segoe UI Variable Display","Segoe 
   .stats{display:none}
   .layout{grid-template-columns:330px minmax(0,1fr)}
 }
+.accent-row{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 4px}
+.accent-sw{width:28px;height:28px;border-radius:50%;border:2px solid var(--panel);outline:1px solid var(--line2);background:var(--c);cursor:pointer;padding:0;position:relative;display:grid;place-items:center;color:var(--muted);transition:outline-color .15s,transform .12s}
+.accent-sw:hover{transform:scale(1.08)}
+.accent-sw.on{outline:2px solid var(--text)}
+.accent-sw.custom{background:var(--c);overflow:hidden}
+.accent-sw.custom .i{width:14px;height:14px}
+.accent-sw.custom input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
+.spane .theme-grid{margin-bottom:2px}
+html[data-glow="off"]{--glow:transparent!important;--glow2:transparent!important}
+html[data-glow="off"] .btn.toggle.on .sw{box-shadow:none}
+html[data-radius="sharp"] :is(.btn,.field,.adapter,.status,.tile,.pchip,.gchip,.chip,.serverline,.row,.theme-opt,.ar-opt,.ar-seg,.snav-i,.mi,.place-icon,.gpill,.pidpill,.fpspill,.cb,.subplace,textarea){border-radius:3px!important}
+html[data-radius="sharp"] :is(.card,.accounts,.modal,.pop,.toast,.handoff-card,.brand-mark){border-radius:5px!important}
+html[data-radius="round"] :is(.btn:not(.icon):not(.toggle),.field,.adapter,.status,.pchip,.gchip,.chip,.ar-seg){border-radius:999px!important}
+html[data-radius="round"] :is(.btn.icon,.tile,.serverline,.row,.theme-opt,.ar-opt,.place-icon){border-radius:14px!important}
+html[data-radius="round"] :is(.card,.accounts,.modal){border-radius:22px!important}
+html[data-density="compact"] .top{padding-top:8px;padding-bottom:8px}
+html[data-density="compact"] .layout{gap:12px;padding:12px 16px}
+html[data-density="compact"] .side{gap:9px}
+html[data-density="compact"] .card{padding:11px}
+html[data-density="compact"] .card-h{margin-bottom:8px}
+html[data-density="compact"] .row{height:42px}
+html[data-density="compact"] .av{width:28px;height:28px;font-size:11.5px}
+html[data-density="compact"] .place-icon{width:68px;height:68px}
+html[data-density="compact"] .place{min-height:68px}
+html[data-density="compact"] .tile{height:56px}
+html[data-density="compact"] .acc-h{padding-top:9px;padding-bottom:9px}
+html[data-density="compact"] .groupbar{padding-top:7px;padding-bottom:7px}
+html[data-density="compact"] .thead{height:28px}
+.sv-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.sv-bar .ar-seg{flex:1 1 190px}
+.sv-bar .ar-seg button{padding:7px 0}
+.sv-bar .adapter{height:34px;min-width:132px}
+.sv-bar .btn.toggle{height:34px}
+.sv-pl{flex:none;width:64px}
+.sv-pl b{display:block;font-size:14px}
+.sv-pl b span{color:var(--muted);font-size:11.5px}
+.sv-pl i,.pt-bar{display:block;height:3px;border-radius:2px;background:var(--line2);overflow:hidden;margin-top:4px}
+.sv-pl i em,.pt-bar em{display:block;height:100%;background:var(--silver1);border-radius:2px;transition:width .4s cubic-bezier(.3,.7,.3,1)}
+.sv-wait{color:var(--muted);font-weight:500}
+.hist-row .av{flex:none}
+.fr-un{color:var(--muted);font-weight:500;font-size:11.5px}
+.fr-off{color:var(--dim);font-size:11.5px;padding:0 6px}
+.pt-ic{flex:none;width:46px;height:46px;border-radius:10px;background:var(--panel2);object-fit:cover;display:grid;place-items:center;color:var(--dim)}
+.pt-ic .i{width:18px;height:18px}
+.pt-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.pt-sum:empty{display:none}
+.pt-sum div{padding:11px 13px;border-radius:11px;background:var(--bg2);border:1px solid var(--line);min-width:0}
+.pt-sum b{display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pt-sum b.t{font-size:14px;line-height:1.5}
+.pt-sum span{display:block;margin-top:2px;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.pt-row{gap:12px;padding:11px 14px 11px 10px}
+.pt-rank{flex:none;width:16px;text-align:center;color:var(--dim);font-size:11.5px}
+.pt-top{display:flex;align-items:center;gap:8px;min-width:0}
+.pt-top b{flex:0 1 auto;min-width:0}
+.pt-top strong{margin-left:auto;flex:none;font-size:13.5px;color:var(--text)}
+.pt-row .txt>span{margin-top:0}
+.pt-bar{margin:7px 0 6px;height:4px}
+.pt-rank,.pt-top strong,.pt-sum b:not(.t){font-family:"Cascadia Mono","Cascadia Code",Consolas,monospace!important;font-weight:600!important}
+.hist-empty .spin{display:inline-block}
+em.pidpill{font-style:normal}
+:root{--ease:cubic-bezier(.22,.9,.28,1);--spring:cubic-bezier(.3,1.45,.45,1)}
+
+.snav{position:relative}
+.snav-ind{position:absolute;left:8px;right:8px;top:0;height:32px;border-radius:8px;background:var(--hover);transform:translateY(var(--y,0px));transition:transform .45s var(--spring);pointer-events:none}
+.snav-ind::before{content:"";position:absolute;left:-8px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--silver1)}
+.snav-i{z-index:1;transition:color .25s ease}
+.snav-i.on,.snav-i:hover{background:none}
+.snav-i.on::before{display:none}
+.snav-i .i{transition:transform .4s var(--spring)}
+.snav-i.on .i{transform:scale(1.12)}
+.spane{display:none;animation:none}
+.spane.on{display:block;animation:spane-in .42s var(--ease) both}
+.spane.leaving{display:block;animation:spane-out .15s ease-in both}
+@keyframes spane-in{from{opacity:0;transform:translateY(calc(var(--dir,1) * 18px))}}
+@keyframes spane-out{to{opacity:0;transform:translateY(calc(var(--dir,1) * -10px))}}
+.spane.on>*{animation:rise .46s var(--ease) both}
+.spane.on>*:nth-child(2){animation-delay:.03s}.spane.on>*:nth-child(3){animation-delay:.06s}.spane.on>*:nth-child(4){animation-delay:.09s}
+.spane.on>*:nth-child(5){animation-delay:.12s}.spane.on>*:nth-child(6){animation-delay:.15s}.spane.on>*:nth-child(n+7){animation-delay:.18s}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+.shead div.swap{animation:shead-in .36s var(--ease)}
+@keyframes shead-in{from{opacity:0;transform:translateX(-8px)}}
+
+.modal-bg{animation:fade .26s ease-out}
+.modal{animation:modal-in .38s var(--ease)}
+@keyframes modal-in{from{opacity:0;transform:translateY(14px) scale(.96)}}
+.modal-bg.closing{animation:fade-out .17s ease-in forwards;pointer-events:none}
+.modal-bg.closing .modal{animation:modal-out .17s ease-in forwards}
+@keyframes fade-out{to{opacity:0}}
+@keyframes modal-out{to{opacity:0;transform:translateY(8px) scale(.97)}}
+.pop{transform-origin:top center;animation:pop-in .22s var(--ease)}
+@keyframes pop-in{from{opacity:0;transform:translateY(-8px) scale(.95)}}
+.pop.closing{animation:pop-out .13s ease-in forwards;pointer-events:none}
+@keyframes pop-out{to{opacity:0;transform:translateY(-4px) scale(.97)}}
+.pop .mi{animation:rise .3s var(--ease) both}
+.pop .mi:nth-child(2){animation-delay:.02s}.pop .mi:nth-child(3){animation-delay:.04s}.pop .mi:nth-child(4){animation-delay:.06s}.pop .mi:nth-child(n+5){animation-delay:.08s}
+.toast{animation:toast-in .4s var(--spring);transition:opacity .22s ease,transform .22s ease}
+@keyframes toast-in{from{opacity:0;transform:translateY(14px) scale(.96)}}
+
+.row{transition:background-color .26s ease,box-shadow .26s ease}
+.row::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:2px;background:var(--silver1);opacity:0;transform:scaleY(0);transition:transform .36s var(--spring),opacity .2s ease,background-color .2s ease}
+.row.sel::before{opacity:1;transform:scaleY(1)}
+.row.pri:not(.sel)::before{opacity:.7;transform:scaleY(1);background:var(--amber)}
+.cb{transition:background-color .2s ease,border-color .2s ease,transform .22s var(--spring)}
+.cb:active{transform:scale(.84)}
+.cb .i{transform:scale(.3) rotate(-18deg);transition:transform .34s var(--spring),opacity .14s ease}
+.cb.on .i{transform:none}
+.list.cascade .row,.list.cascade .row::before,.list.cascade .cb,.list.cascade .cb .i{transition-delay:calc(min(var(--i,0),22) * 16ms)}
+.list.swap .row{animation:rise .42s var(--ease) both;animation-delay:calc(min(var(--i,0),16) * 22ms)}
+.star{transition:color .2s ease,background-color .2s ease,transform .25s var(--spring)}
+.star:active{transform:scale(.8)}
+.star .i{transition:fill .2s ease,transform .35s var(--spring)}
+.star.on .i{transform:scale(1.12)}
+.row-act .btn.icon{transition:background-color .18s ease,color .18s ease,border-color .18s ease,transform .2s var(--spring)}
+.row-act .btn.icon:active{transform:scale(.88)}
+
+.btn{transition:background-color .2s ease,border-color .2s ease,color .2s ease,box-shadow .3s ease,transform .22s var(--spring),opacity .2s ease}
+.btn:active:not(:disabled){transform:scale(.96)}
+.btn.toggle .sw,.switch{transition:background-color .28s ease,box-shadow .28s ease}
+.btn.toggle .sw::after,.switch::after{transition:left .34s var(--spring),background-color .25s ease,transform .2s ease}
+.btn.toggle:active .sw::after,.serverline:active .switch::after{transform:scaleX(1.25)}
+.ar-seg button,.theme-opt,.ar-opt,.srow,.hist-row,.ff-row,.mi,.tile,.pchip,.gchip,.chip,.field,.adapter,.serverline,.status,.accent-sw,.tab{transition:background-color .22s ease,border-color .22s ease,color .22s ease,box-shadow .28s ease,transform .22s var(--spring),outline-color .2s ease}
+.tile:active,.pchip:active,.gchip:active,.theme-opt:active,.ar-opt:active,.mi:active{transform:scale(.97)}
+.count,.n,#launchCount{transition:color .2s ease,background-color .2s ease}
+.progress i,.pt-bar em,.sv-pl i em{transition:width .6s var(--ease)}
+
+.place.swapin>*{animation:rise .45s var(--ease) both}
+.place.swapin>*:nth-child(2){animation-delay:.06s}
+.hist-empty{animation:fade .3s ease-out}
+
+#app.enter .top{animation:drop .5s var(--ease) both}
+#app.enter .side>*{animation:rise .55s var(--ease) both}
+#app.enter .side>*:nth-child(2){animation-delay:.06s}#app.enter .side>*:nth-child(3){animation-delay:.12s}#app.enter .side>*:nth-child(4){animation-delay:.18s}#app.enter .side>*:nth-child(n+5){animation-delay:.24s}
+#app.enter .accounts{animation:rise .55s var(--ease) .08s both}
+@keyframes drop{from{opacity:0;transform:translateY(-10px)}}
+
+html[data-motion="off"] *,html[data-motion="off"] *::before,html[data-motion="off"] *::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important;transition-delay:0s!important}
+.list{counter-reset:acct}
+.row{counter-increment:acct}
+em.anon-t{font-style:normal}
+html[data-anon="on"] .row .nm .anon-t,html[data-anon="on"] .row .un,html[data-anon="on"] em.anon-t,html[data-anon="on"] span.anon-t{font-size:0;letter-spacing:0}
+html[data-anon="on"] .row .nm .anon-t::after{content:"Account " counter(acct);font-size:13.5px}
+html[data-anon="on"] .row .un::after{content:"ID ••••••••";font-size:11.5px;letter-spacing:.06em;color:var(--dim)}
+html[data-anon="on"] em.anon-t::after{content:"hidden account";font-size:11px;color:var(--muted)}
+html[data-anon="on"] span.anon-t::after{content:"Hidden account";font-size:12.5px}
+html[data-anon="on"] .row img.av{content:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' fill='%231d1f25'/%3E%3Ccircle cx='18' cy='14' r='5.5' fill='%23666b77'/%3E%3Cpath d='M7 33c.8-7 5.4-10 11-10s10.2 3 11 10z' fill='%23666b77'/%3E%3C/svg%3E")}
+html[data-anon="on"] .row div.av{font-size:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' fill='%231d1f25'/%3E%3Ccircle cx='18' cy='14' r='5.5' fill='%23666b77'/%3E%3Cpath d='M7 33c.8-7 5.4-10 11-10s10.2 3 11 10z' fill='%23666b77'/%3E%3C/svg%3E");background-size:cover}
+.split{display:inline-flex}
+.split>.btn:first-child{border-top-right-radius:0!important;border-bottom-right-radius:0!important}
+.split>.btn:last-child{border-top-left-radius:0!important;border-bottom-left-radius:0!important;margin-left:-1px;width:26px;padding:0}
+.split>.btn:last-child .i{width:13px;height:13px}
 </style>
 </head>
 <body>
@@ -438,10 +627,10 @@ h1,h2,h3,.place-name,.load-title{font-family:"Segoe UI Variable Display","Segoe 
     <div class="actions">
       <button class="btn toggle" id="btnMulti"><span class="sw"></span>Multi Instance</button>
       <button class="btn" id="btnClient" data-i="monitor" title="Open the Roblox app signed in (selected account, or the top one) without joining a game">Launch Client</button>
-      <button class="btn" id="btnArrange" data-i="layout" title="Tile all Roblox windows neatly (right-click to pick a layout)">Arrange <span class="count" id="arrangeCount">0</span></button>
+      <span class="split"><button class="btn" id="btnArrange" data-i="layout" title="Tile all Roblox windows neatly (right-click to pick a layout)">Arrange <span class="count" id="arrangeCount">0</span></button><button class="btn icon" id="btnArrangeMenu" title="Pick a layout" aria-label="Pick a layout"></button></span>
       <button class="btn danger" id="btnKill" data-i="octagon" title="Close every running Roblox client">Kill All</button>
       <button class="btn primary" id="btnLaunch" data-i="play" title="Launch the selected accounts, in list order">Launch Selected <span class="count" id="launchCount">0</span></button>
-      <button class="btn icon" id="btnSettings" data-i="settings" title="Appearance"></button>
+      <button class="btn icon" id="btnSettings" data-i="settings" title="Settings"></button>
     </div>
   </header>
 
@@ -466,10 +655,11 @@ h1,h2,h3,.place-name,.load-title{font-family:"Segoe UI Variable Display","Segoe 
           <span class="sl-t"><b>Join best-ping server</b><span>Picks the fastest public server</span></span>
           <span class="switch" id="bestSwitch"></span>
         </button>
-        <button class="btn good mt" id="btnRejoin" data-i="rewind" style="width:100%" title="Relaunch the selected accounts (or the top one) into the last server you joined">Rejoin last server</button>
+        <div class="row2 mt"><button class="btn good" id="btnRejoin" data-i="rewind" style="flex:1" title="Relaunch the selected accounts (or the top one) into the last server you joined">Rejoin last server</button><button class="btn" id="btnHistory" data-i="history" title="Servers you joined before — pick one to go back in">History</button></div>
+        <div class="row2 mt"><button class="btn" id="btnServers" data-i="server" style="flex:1" title="Browse this place's public servers by players, ping and region">Servers</button><button class="btn" id="btnFriends" data-i="users" style="flex:1" title="See which friends are in a game and join them">Friends</button><button class="btn" id="btnPlaytime" data-i="clock" style="flex:1" title="Time played per game and account">Playtime</button></div>
       </section>
 
-      <section class="card">
+      <section class="card" hidden>
         <div class="card-h"><span data-i="target"></span><h2>Join Server</h2></div>
         <div class="row2">
           <div class="field"><span data-i="link"></span><input id="jsInput" spellcheck="false" placeholder="Server ID, join script or roblox:// link"></div>
@@ -557,10 +747,6 @@ h1,h2,h3,.place-name,.load-title{font-family:"Segoe UI Variable Display","Segoe 
 const DEMO = !(window.chrome && window.chrome.webview);
 const HOST = 'https://vels.example/';
 
-/* ---------- theming ---------- */
-// Each base theme is the neutral ramp; the accent recolours primary buttons,
-// selection, focus rings and the switch. Both persist in localStorage and are
-// applied before first paint so there's no flash of the default look.
 const THEMES = {
   graphite: { name: 'Graphite', sw: '#15171b', vars: {} },
   obsidian: { name: 'Obsidian', sw: '#050506', vars: {
@@ -591,12 +777,11 @@ const mix = (a, b, t) => rgb2hex(hex2rgb(a).map((v, i) => v + (hex2rgb(b)[i] - v
 const luma = c => { const [r, g, b] = hex2rgb(c); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
 const isHex = c => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c || '');
 
-// Builds a full neutral ramp from one chosen colour so any background works.
 function customVars(base) {
   if (!isHex(base)) base = '#141824';
   const dark = luma(base) < 0.55;
-  const up = dark ? '#ffffff' : '#000000';    // toward foreground
-  const down = dark ? '#000000' : '#ffffff';  // toward deepest background
+  const up = dark ? '#ffffff' : '#000000';
+  const down = dark ? '#000000' : '#ffffff';
   return {
     '--bg': mix(base, down, 0.34), '--bg2': mix(base, down, 0.2), '--panel': mix(base, up, 0.04),
     '--panel2': mix(base, up, 0.1), '--hover': mix(base, up, 0.17), '--line': mix(base, up, 0.12), '--line2': mix(base, up, 0.21),
@@ -613,8 +798,14 @@ const store = {
 const RAMP_KEYS = ['--bg', '--bg2', '--panel', '--panel2', '--hover', '--line', '--line2', '--text', '--soft', '--muted', '--dim', '--top-bg', '--toolbar-bg', '--brand-bg', '--sk-bg'];
 const theme = {
   base: store.get('vmt.theme', 'graphite'),
-  accent: ACCENT,
+  accent: store.get('vmt.accent', ACCENT),
   custom: store.get('vmt.custom', '#141824'),
+  radius: store.get('vmt.radius', 'default'),
+  density: store.get('vmt.density', 'comfortable'),
+  glow: store.get('vmt.glow', 'on'),
+  motion: store.get('vmt.motion', 'on'),
+  anon: store.get('vmt.anon', 'off'),
+  confirmKill: store.get('vmt.confirmKill', 'on'),
   vars() {
     if (this.base === 'custom') return customVars(this.custom);
     return (THEMES[this.base] || THEMES.graphite).vars;
@@ -628,8 +819,15 @@ const theme = {
     root.style.setProperty('--silver2', mix(a, this.isLight() ? '#ffffff' : '#000000', 0.28));
     root.style.setProperty('--accent-ink', light ? '#101114' : '#ffffff');
     root.style.setProperty('color-scheme', this.isLight() ? 'light' : 'dark');
+    root.dataset.radius = this.radius;
+    root.dataset.density = this.density;
+    root.dataset.glow = this.glow;
+    root.dataset.motion = this.motion;
+    root.dataset.anon = this.anon;
     if (typeof syncFrame === 'function') syncFrame();
   },
+  setAccent(hex) { if (!isHex(hex)) return; this.accent = hex; store.set('vmt.accent', hex); this.apply(); },
+  setOpt(key, value) { this[key] = value; store.set('vmt.' + key, value); this.apply(); },
   set(base, custom) {
     if (base) { this.base = base; store.set('vmt.theme', base); }
     if (custom) { this.custom = custom; this.base = 'custom'; store.set('vmt.custom', custom); store.set('vmt.theme', 'custom'); }
@@ -691,6 +889,15 @@ const ICONS = {
   rewind: '<path d="M11 19 2 12l9-7v14zM22 19l-9-7 9-7v14z"/>',
   folder: '<path d="M4 5h5l2 2.5h9a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
   type: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
+  flag: '<path d="M4 22V4M4 4h13l-2 4 2 4H4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M3 3l18 18M10.6 5.2A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.3 4.2M6.6 6.6A16.6 16.6 0 0 0 2 12s3.5 7 10 7a10.4 10.4 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  volume: '<path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  pointer: '<path d="m4 4 7 17 2.5-7.5L21 11z"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
   folderPlus: '<path d="M4 5h5l2 2.5h9a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M12 11v5M9.5 13.5h5"/>'
 };
 const icon = (n, extra = '') => `<svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${ICONS[n] || ''}</svg>`;
@@ -706,8 +913,6 @@ const compact = n => {
   if (n >= 1e3) return f(n / 1e3, 'K');
   return String(n);
 };
-// Patches only the top-level children that changed, so images, hover states
-// and animations in untouched parts of the page aren't rebuilt on every update.
 const setHTML = (el, html) => {
   if (el._html === html) return;
   el._html = html;
@@ -728,7 +933,7 @@ let dragging = null;
 let pendingState = null;
 let placeTimer = 0;
 let loginWaitDismissed = false;
-let groupFilter = null; // null = all; '' = ungrouped; else group name
+let groupFilter = null;
 const sel = new Set();
 
 function send(cmd, data) {
@@ -737,16 +942,12 @@ function send(cmd, data) {
   window.chrome.webview.postMessage(JSON.stringify(msg));
 }
 
-// Push the current theme's frame colours to the native window so the Windows
-// caption bar (min/max/close) matches instead of staying its start-up colour.
 function syncFrame() {
   if (DEMO || !(window.chrome && window.chrome.webview)) return;
   const cs = getComputedStyle(document.documentElement);
   const v = k => cs.getPropertyValue(k).trim();
   send('frame', { bg: v('--top-bg'), text: v('--text'), border: v('--line2') });
 }
-
-/* ---------- state ---------- */
 
 function onState(s) {
   if (dragging || (selDrag && selDrag.active)) { pendingState = s; return; }
@@ -762,6 +963,11 @@ function onState(s) {
   renderLaunch();
   updateArrangeButton();
   if (settingsRefresh) settingsRefresh();
+  if (flagsRefresh) flagsRefresh();
+  if (historyRefresh) historyRefresh();
+  if (serversRefresh) serversRefresh();
+  if (friendsRefresh) friendsRefresh();
+  if (playtimeRefresh) playtimeRefresh();
   syncUpdatePrompt();
   const key = JSON.stringify(s.accounts);
   if (key !== accountsKey) { accountsKey = key; renderGroups(); renderAccounts(); }
@@ -803,6 +1009,8 @@ function renderPlace() {
       ${stats ? `<div class="pstats">${stats}</div>` : ''}</div>`;
   }
   setHTML($('#placeHero'), h);
+  const heroKey = pid + ':' + (pid > 0 && p.loaded ? p.name : '');
+  if (renderPlace.key !== heroKey) { renderPlace.key = heroKey; replay($('#placeHero'), 'swapin', 700); }
   const saved = S.savedPlaces.find(x => x.id === pid);
   $('#savedPlacesLbl').textContent = saved ? saved.name : 'Saved';
   $('#btnOpenGame').disabled = !(pid > 0);
@@ -882,8 +1090,6 @@ function renderBuild() {
   setHTML($('#buildStatus'), h);
 }
 
-/* ---------- accounts ---------- */
-
 function groupList() {
   const seen = new Map();
   for (const a of S.accounts) if (a.group) seen.set(a.group, (seen.get(a.group) || 0) + 1);
@@ -916,11 +1122,11 @@ function rowHTML(a, i) {
   const av = a.avatar && !DEMO
     ? `<img class="av" src="${HOST}avatar/${a.id}" alt="" draggable="false">`
     : `<div class="av">${esc(name.charAt(0).toUpperCase())}</div>`;
-  return `<div class="row cols${on ? ' sel' : ''}${a.priority ? ' pri' : ''}" data-id="${a.id}" data-index="${i}">
+  return `<div class="row cols${on ? ' sel' : ''}${a.priority ? ' pri' : ''}" data-id="${a.id}" data-index="${i}" style="--i:${i}">
     <div class="grip" title="Drag to reorder">${icon('grip')}</div>
     <div><div class="cb${on ? ' on' : ''}">${icon('check')}</div></div>
     <div class="ord">${i + 1}</div>
-    <div class="acct">${av}<div class="who"><div class="nm">${esc(name)}${a.group ? `<span class="gpill" title="Group: ${esc(a.group)}">${esc(a.group)}</span>` : ''}${a.pid ? `<span class="pidpill" title="Running — Roblox process ${a.pid}"><span class="rdot"></span>PID ${a.pid}</span>` : ''}</div><div class="un">${a.alias ? '@' + esc(a.username) : 'ID ' + a.id}</div></div></div>
+    <div class="acct">${av}<div class="who"><div class="nm"><span class="anon-t">${esc(name)}</span>${a.group ? `<span class="gpill" title="Group: ${esc(a.group)}">${esc(a.group)}</span>` : ''}${a.fps ? `<span class="fpspill" title="This account launches limited to ${a.fps} FPS">${a.fps} FPS</span>` : ''}${a.pid ? `<span class="pidpill" title="Running — Roblox process ${a.pid}"><span class="rdot"></span>PID ${a.pid}</span>` : ''}</div><div class="un">${a.alias ? '@' + esc(a.username) : 'ID ' + a.id}</div></div></div>
     <div><button class="star${a.priority ? ' on' : ''}" data-act="pri" title="${a.priority ? 'Remove priority' : 'Prioritise: keep at the top and launch first'}">${icon('star')}</button></div>
     <div class="row-act">
       <button class="btn icon sm play" data-act="launch" title="Launch into the current place">${icon('play')}</button>
@@ -976,7 +1182,6 @@ function toggleRow(id, shift) {
   updateSelectionUI();
 }
 
-// Mirrors backend::MoveAccount so the optimistic reorder matches what gets saved.
 function applyMove(arr, from, to) {
   const [m] = arr.splice(from, 1);
   arr.splice(to, 0, m);
@@ -998,8 +1203,6 @@ function openRowMenu(anchor, id) {
   const a = accById(id);
   if (!a) return;
   const priCount = S.accounts.filter(x => x.priority).length;
-  // If the right-clicked row is part of a multi-selection, bulk actions apply
-  // to the whole selection; per-account actions (copy, edit) stay on this row.
   const bulk = sel.has(id) && sel.size > 1;
   const ids = bulk ? orderedSelection() : [id];
   const many = ids.length > 1 ? ` (${ids.length})` : '';
@@ -1017,12 +1220,11 @@ function openRowMenu(anchor, id) {
     { icon: 'key', label: 'Copy user:pass', disabled: !a.hasPassword, on: () => send('copy', { id, what: 'userpass' }) },
     '-',
     { icon: 'folder', label: (bulk ? 'Set group' : a.group ? `Group: ${a.group}` : 'Add to group') + many, on: () => groupModal(ids) },
+    { icon: 'gauge', label: 'FPS limit' + many, meta: bulk ? '' : (a.fps ? a.fps + ' FPS' : 'Default'), on: () => fpsModal(ids) },
     { icon: 'pencil', label: 'Edit alias & password', on: () => editModal(id) },
     { icon: 'trash', label: 'Remove account' + many, danger: true, on: () => confirmDelete(ids) }
   ], { alignRight: true, width: 220 });
 }
-
-/* ---------- drag to reorder ---------- */
 
 const listEl = $('#list');
 
@@ -1087,10 +1289,6 @@ listEl.addEventListener('pointermove', e => { if (dragging) updateDrag(e.clientY
 listEl.addEventListener('pointerup', () => endDrag(true));
 listEl.addEventListener('pointercancel', () => endDrag(false));
 
-/* ---------- drag to select ----------
-   Press on a row's body and drag up or down to select (or, if the first row was
-   already selected, deselect) every row the drag covers. A plain click still
-   toggles one row; the grip still reorders. */
 let selDrag = null, suppressClick = false;
 function rowAtY(y) {
   const rows = $$('.row', listEl);
@@ -1120,7 +1318,6 @@ function endSelDrag() {
   clearInterval(d.timer);
   document.body.classList.remove('is-selecting');
   $$('.row.paint', listEl).forEach(r => r.classList.remove('paint'));
-  // Swallow the click that follows a real drag so it doesn't toggle the last row.
   if (d.active) { suppressClick = true; lastClickId = d.last; setTimeout(() => { suppressClick = false; }, 0); }
   if (pendingState && !dragging) { const p = pendingState; pendingState = null; onState(p); }
 }
@@ -1142,7 +1339,6 @@ listEl.addEventListener('pointermove', e => {
     try { listEl.setPointerCapture(e.pointerId); } catch (_) {}
     document.body.classList.add('is-selecting');
     if (window.getSelection) window.getSelection().removeAllRanges();
-    // Auto-scroll while the pointer sits near the list's top or bottom edge.
     d.timer = setInterval(() => {
       if (!selDrag) return;
       const r = listEl.getBoundingClientRect(), edge = 40;
@@ -1174,12 +1370,10 @@ listEl.addEventListener('click', e => {
   toggleRow(id, e.shiftKey);
 });
 listEl.addEventListener('scroll', closePopover);
-// Double-click an account's name to quickly edit its alias.
 listEl.addEventListener('dblclick', e => {
   const row = e.target.closest('.row');
   if (row && e.target.closest('.who')) { e.preventDefault(); editModal(+row.dataset.id); }
 });
-// Right-click anywhere on an account row opens its More menu at the cursor.
 listEl.addEventListener('contextmenu', e => {
   const row = e.target.closest('.row');
   if (!row) return;
@@ -1187,12 +1381,17 @@ listEl.addEventListener('contextmenu', e => {
   openRowMenu(pointAnchor(e.clientX, e.clientY), +row.dataset.id);
 });
 
-/* ---------- popovers, menus, modals, toasts ---------- */
-
 let popEl = null;
-// A zero-size anchor at a screen point, for opening menus at the cursor (right-click).
 const pointAnchor = (x, y) => ({ getBoundingClientRect: () => ({ left: x, right: x, top: y, bottom: y, width: 0, height: 0 }), contains: () => false });
-function closePopover() { if (popEl) { popEl.remove(); popEl = null; } }
+function replay(el, cls, ms) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  clearTimeout(el['_t' + cls]);
+  el['_t' + cls] = setTimeout(() => el.classList.remove(cls), ms || 900);
+}
+function closePopover() { if (popEl) { const p = popEl; popEl = null; p.classList.add('closing'); setTimeout(() => p.remove(), 140); } }
 function openPopover(anchor, build, opts) {
   opts = opts || {};
   if (popEl && popEl._anchor === anchor) { closePopover(); return null; }
@@ -1239,7 +1438,13 @@ function openModal(inner, mount, cls) {
   bg.className = 'modal-bg';
   bg.innerHTML = `<div class="modal${cls ? ' ' + cls : ''}" role="dialog">${inner}</div>`;
   document.body.appendChild(bg);
-  const close = () => { const k = modals.indexOf(close); if (k >= 0) modals.splice(k, 1); bg.remove(); };
+  const close = () => {
+    const k = modals.indexOf(close);
+    if (k >= 0) modals.splice(k, 1);
+    if (bg.classList.contains('closing')) return;
+    bg.classList.add('closing');
+    setTimeout(() => bg.remove(), 150);
+  };
   modals.push(close);
   bg.addEventListener('pointerdown', e => { if (e.target === bg) close(); });
   if (mount) mount(bg.firstElementChild, close);
@@ -1323,6 +1528,42 @@ function renamePlaceModal(id) {
   });
 }
 
+function fpsModal(ids) {
+  if (!ids.length) return;
+  const cur = ids.length === 1 ? (accById(ids[0]).fps || 0) : -1;
+  const n = ids.length;
+  const presets = [0, 15, 30, 60, 120, 144, 240];
+  openModal(`<h3>FPS limit</h3>
+    <p>Caps the frame rate ${n === 1 ? 'this account' : `these ${n} accounts`} launch with, so background alts use less of your PC. It takes effect the next time ${n === 1 ? 'it is' : 'they are'} launched.</p>
+    <div class="row2" style="flex-wrap:wrap;gap:6px">${presets.map(p => `<button class="btn sm${p === cur ? ' primary' : ''}" data-fps="${p}">${p || 'Default'}</button>`).join('')}</div>
+    <div class="label">Custom</div>
+    <div class="row2"><div class="field">${icon('gauge')}<input data-custom inputmode="numeric" maxlength="4" spellcheck="false" placeholder="5 – 1000" value="${cur > 0 && !presets.includes(cur) ? cur : ''}"></div><button class="btn primary" data-set>Set</button></div>
+    <div class="foot"><button class="btn ghost" data-x>Close</button></div>`, (m, close) => {
+    const apply = cap => { send('setFps', { ids, cap }); close(); };
+    m.querySelectorAll('[data-fps]').forEach(b => b.onclick = () => apply(+b.dataset.fps));
+    const inp = m.querySelector('[data-custom]');
+    const set = () => { const v = parseInt(inp.value, 10); if (v >= 5 && v <= 1000) apply(v); else inp.focus(); };
+    m.querySelector('[data-set]').onclick = set;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') set(); });
+    m.querySelector('[data-x]').onclick = close;
+  });
+}
+
+function chromeModal(what) {
+  const login = what !== 'web';
+  openModal(`<div class="upd"><div class="upd-body">
+      <div class="upd-ic err">${icon('globe')}</div>
+      <h3>Google Chrome is needed</h3>
+      <p>${login ? 'Browser login opens a Chrome window for you to sign in to Roblox' : 'Opening an account in the browser uses Chrome'}, and Chrome isn't installed on this PC.${login ? ' You can install it, or add the account by pasting its cookie instead.' : ''}</p>
+      <div class="foot">${login ? '<button class="btn ghost" data-paste>Paste cookie instead</button>' : '<button class="btn ghost" data-x>Close</button>'}<button class="btn primary" data-get>Get Chrome</button></div>
+    </div></div>`, (m, close) => {
+    m.querySelector('[data-get]').onclick = () => { send('openUrl', { url: 'https://www.google.com/chrome/' }); close(); };
+    const p = m.querySelector('[data-paste]'), x = m.querySelector('[data-x]');
+    if (p) p.onclick = () => { close(); pasteModal(); };
+    if (x) x.onclick = close;
+  });
+}
+
 function groupModal(ids) {
   if (!ids.length) return;
   const groups = groupList().map(g => g[0]);
@@ -1361,9 +1602,6 @@ function toast(kind, text) {
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 220); }, kind === 'err' ? 3000 : 1800);
 }
 
-/* ---------- custom tooltips ---------- */
-// Lazily convert any element's native `title` into an animated custom tooltip,
-// so every existing title="" works with no markup changes.
 const tipEl = document.createElement('div');
 tipEl.id = 'tip';
 document.body.appendChild(tipEl);
@@ -1407,8 +1645,6 @@ function toastFromLog(text) {
   toast(kind, text.replace(/^\[[!vi]\]\s*/, ''));
 }
 
-/* ---------- wiring ---------- */
-
 $$('[data-i]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)));
 const brandSrc = DEMO ? '../assets/brand.png' : HOST + 'brand.png';
 $('#brandImg').src = brandSrc;
@@ -1422,15 +1658,14 @@ function hideLoader() {
   const el = $('#loader');
   el.classList.add('gone');
   setTimeout(() => el.remove(), 450);
+  replay($('#app'), 'enter', 1200);
+  replay($('#list'), 'swap', 1000);
 }
-// Keep the loader up until the account icons have loaded, so rows don't reveal
-// with letter placeholders that then pop into avatars. Capped so a slow or
-// failed icon never traps the user behind it.
 function maybeHideLoader() {
   if (loaderGone || !S) return;
   if (!firstStateAt) {
     firstStateAt = Date.now();
-    setTimeout(hideLoader, S.accounts.length ? 3500 : 500);  // hard cap on the wait
+    setTimeout(hideLoader, S.accounts.length ? 3500 : 500);
   }
   if (S.accounts.length && S.accounts.every(a => a.avatar)) hideLoader();
 }
@@ -1461,7 +1696,6 @@ function buildThemeGrid(container) {
   container.querySelector('[data-custom]').addEventListener('input', ev => { theme.set(null, ev.target.value); buildThemeGrid(container); });
 }
 
-/* ---------- window arrange ---------- */
 const ARRANGE_PRESETS = [
   { id: 'grid', name: 'Smart grid' },
   { id: 'columns', name: 'Side by side' },
@@ -1470,7 +1704,6 @@ const ARRANGE_PRESETS = [
   { id: 'cascade', name: 'Cascade' },
   { id: 'mini', name: 'Mini tiles' },
 ];
-// Tiny SVG preview of each preset with 4 windows (mirrors the layouts in arrange.cpp).
 function arrangePreview(id) {
   const W = 96, H = 54, g = 3, R = [];
   const grid = (c, r, n) => { const tw = (W - g * (c + 1)) / c, th = (H - g * (r + 1)) / r;
@@ -1500,7 +1733,6 @@ function refreshArrange(m) {
 function wireArrange(m) {
   const grid = m.querySelector('#arPresets');
   grid.innerHTML = ARRANGE_PRESETS.map(p => `<button class="ar-opt" data-preset="${p.id}" title="${p.name}">${arrangePreview(p.id)}<span>${p.name}</span></button>`).join('');
-  // Picking a preset saves it and re-tiles straight away so the result is visible.
   grid.onclick = e => { const b = e.target.closest('[data-preset]'); if (!b || !S) return; S.arrange.preset = b.dataset.preset; refreshArrange(m); send('arrangeSet', { preset: b.dataset.preset, apply: S.arrange.windows > 0 }); };
   m.querySelector('#arGap').onclick = e => { const b = e.target.closest('[data-gap]'); if (!b || !S) return; S.arrange.gap = +b.dataset.gap; refreshArrange(m); send('arrangeSet', { gap: +b.dataset.gap, apply: S.arrange.windows > 0 }); };
   m.querySelector('#arMon').onclick = e => {
@@ -1519,23 +1751,25 @@ function updateArrangeButton() {
   if (!a || !b) return;
   $('#arrangeCount').textContent = a.windows;
   b.disabled = !a.windows;
-  b.title = a.windows ? `Tile ${a.windows} Roblox window${a.windows === 1 ? '' : 's'} (${arrangeLabel(a.preset)}). Right-click to pick a layout.` : 'No Roblox windows open';
+  b.title = a.windows ? `Tile ${a.windows} Roblox window${a.windows === 1 ? '' : 's'} (${arrangeLabel(a.preset)}). Use the arrow to pick a layout.` : 'No Roblox windows open';
 }
 $('#btnArrange').onclick = () => send('arrange', {});
-$('#btnArrange').addEventListener('contextmenu', e => {
-  e.preventDefault();
+function openArrangeMenu(anchor) {
   if (!S || !S.arrange) return;
-  openMenu(e.currentTarget, ARRANGE_PRESETS.map(p => ({
+  const gaps = [[0, 'No spacing'], [6, 'Tight spacing'], [14, 'Roomy spacing']];
+  openMenu(anchor, ARRANGE_PRESETS.map(p => ({
     icon: 'layout', label: p.name, active: p.id === S.arrange.preset,
     on: () => { S.arrange.preset = p.id; send('arrangeSet', { preset: p.id, apply: true }); }
-  })).concat(['-', { icon: 'settings', label: S.arrange.auto ? 'Turn off auto-arrange' : 'Turn on auto-arrange',
-    on: () => { S.arrange.auto = !S.arrange.auto; send('arrangeSet', { auto: S.arrange.auto }); } }]), { width: 240 });
-});
+  })).concat(['-']).concat(gaps.map(([g, label]) => ({
+    icon: 'dot', label, active: S.arrange.gap === g,
+    on: () => { S.arrange.gap = g; send('arrangeSet', { gap: g, apply: true }); }
+  }))).concat(['-', { icon: 'refresh', label: S.arrange.auto ? 'Turn off auto-arrange' : 'Turn on auto-arrange', active: !!S.arrange.auto,
+    on: () => { S.arrange.auto = !S.arrange.auto; send('arrangeSet', { auto: S.arrange.auto }); } }]), { width: 240, alignRight: true });
+}
+$('#btnArrange').addEventListener('contextmenu', e => { e.preventDefault(); openArrangeMenu($('#btnArrangeMenu')); });
+$('#btnArrangeMenu').innerHTML = icon('chevron');
+$('#btnArrangeMenu').onclick = e => openArrangeMenu(e.currentTarget);
 
-/* ---------- update prompt ---------- */
-
-// Shown once per run when the startup check finds a newer build; then follows the
-// download through to the restart. Each phase fades in, the bar eases between ticks.
 let updModal = null, updPhase = '', updOffered = false, updAuto = false;
 const UPD_PHASES = {
   available: { ic: 'download', title: 'Update available', text: 'This copy of Vels Multi Tool is out of date. Would you like to update now? It takes a few seconds and reopens right where you are.',
@@ -1551,7 +1785,6 @@ function syncUpdatePrompt() {
     if (!u.prompt || updOffered || !loaderGone || u.status !== 'available') return;
     updOffered = true;
     updPhase = '';
-    // Not openModal: Escape or a stray click outside shouldn't drop it mid-update.
     closePopover();
     const bg = document.createElement('div');
     bg.className = 'modal-bg';
@@ -1559,12 +1792,10 @@ function syncUpdatePrompt() {
     document.body.appendChild(bg);
     updModal = bg.firstElementChild;
     updModal.closeUpd = () => { bg.remove(); updModal = null; };
-    // Auto-update: skip the question and go straight to the download view.
     updAuto = !!u.auto;
     if (updAuto) send('updateInstall');
   }
   if (u.status === 'current') { updModal.closeUpd(); return; }
-  // A manual re-check from Settings can pass through these while the prompt is open.
   if (u.status !== 'available') updAuto = false;
   const phase = updAuto ? 'downloading' : UPD_PHASES[u.status] ? u.status : updPhase;
   if (phase !== updPhase) {
@@ -1591,50 +1822,402 @@ function syncUpdatePrompt() {
   }
 }
 
-let settingsRefresh = null;
-$('#btnSettings').onclick = () => {
-  openModal(`<h3>Settings</h3>
-    <div class="settings">
-      <section>
-        <div class="s-h">${icon('palette')}Appearance</div>
-        <div class="theme-grid" id="setThemes"></div>
-      </section>
-      <section>
-        <div class="s-h">${icon('wifi')}Network — MAC address</div>
-        <p class="s-desc">Give this network adapter a random <b>MAC address</b>, or restore its hardware default. The adapter restarts, so your internet drops for a few seconds.</p>
-        <button class="adapter" id="setAdapter" style="width:100%"><span id="setAdapterName">Loading adapters…</span><span class="mac" id="setAdapterMac"></span><span class="chev" data-i="chevron"></span></button>
-        <div class="row2 mt"><button class="btn" id="setSpoof" style="flex:1" data-i="shuffle"><span id="setSpoofLbl">Spoof MAC</span></button><button class="btn" id="setRevert" style="flex:1" data-i="undo">Revert MAC</button></div>
-        <div class="s-note" id="setAdminNote" hidden>${icon('shield')}Needs administrator rights — you'll be asked to restart as admin.</div>
-      </section>
-      <section>
-        <div class="s-h">${icon('layout')}Window layout</div>
-        <p class="s-desc">Tiles every open Roblox window neatly across a display, in your account list order. Use <b>Arrange</b> in the top bar, or turn on <b>auto-arrange</b> to re-tile whenever a Roblox window opens or closes.</p>
-        <div class="ar-grid" id="arPresets"></div>
-        <div class="ar-row"><span class="lbl">Spacing</span><div class="ar-seg" id="arGap"><button data-gap="0">None</button><button data-gap="6">Tight</button><button data-gap="14">Roomy</button></div></div>
-        <div class="ar-row"><span class="lbl">Display</span><button class="adapter" id="arMon" style="flex:1"><span id="arMonName">Main display</span><span class="chev" data-i="chevron"></span></button></div>
-        <div class="row2 mt"><button class="btn toggle" id="arAuto" style="flex:1"><span class="sw"></span>Auto-arrange</button><button class="btn primary" id="arNow" data-i="layout" style="flex:1"><span id="arNowLbl">Arrange now</span></button></div>
-      </section>
-      <section>
-        <div class="s-h">${icon('type')}Roblox font</div>
-        <p class="s-desc">Replaces <b>every font</b> in the Roblox client with one of your own (<b>.ttf</b>, <b>.otf</b> or <b>.ttc</b>). It's applied to each Roblox install, including downloaded builds, and re-applied after Roblox updates. It also overrides any font set in <b>Bloxstrap</b> or <b>Fishstrap</b>. Restart Roblox to see a change.</p>
-        <div class="row2"><button class="btn" id="fontPick" data-i="type" style="flex:1;min-width:0"><span id="fontPickLbl" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Choose font…</span></button><button class="btn toggle" id="fontOn" style="flex:1"><span class="sw"></span>Use custom font</button></div>
-      </section>
-      <section>
-        <div class="s-h">${icon('download')}Updates</div>
-        <p class="s-desc">Compares this copy with the latest prebuilt <b>VelsMultiTool.exe</b> on GitHub. Updating downloads it, swaps it in and restarts the tool in the same spot. Your accounts and settings carry over.</p>
-        <button class="btn" id="updBtn" style="width:100%"><span id="updLbl">Check for updates</span></button>
-        <div class="row2 mt"><button class="btn toggle" id="updNotify" style="flex:1" title="Offer new builds in a dialog when the tool starts"><span class="sw"></span>Ask at startup</button><button class="btn toggle" id="updAutoBtn" style="flex:1" title="Install new builds as soon as they are found at startup, without asking"><span class="sw"></span>Auto-update</button></div>
-        <div class="s-note" id="updNote" hidden></div>
-      </section>
-      <section>
-        <div class="s-h">${icon('cookie')}Roblox cookies</div>
-        <p class="s-desc">Wipes the <b>RobloxCookies.dat</b> login file for the stock Roblox client and, if installed, <b>Bloxstrap</b> and <b>Fishstrap</b>. Handy when a client is stuck signed into the wrong account. Your browser cookies and the accounts saved here are <b>not</b> touched.</p>
-        <button class="btn amber" id="setCookies" data-i="cookie" style="width:100%"><span id="setCookiesLbl">Clear Roblox cookies</span></button>
-      </section>
+function ago(t) {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - t));
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + ' min ago';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+  const d = Math.floor(s / 86400);
+  return d === 1 ? 'yesterday' : d + ' days ago';
+}
+let historyRefresh = null;
+$('#btnHistory').onclick = () => {
+  openModal(`<h3>Server history</h3>
+    <p>Servers your accounts joined, newest first. <b>Rejoin</b> sends the selected accounts in, or the account that was there if none are selected. A server that has since shut down can't be rejoined.</p>
+    <div class="hist" id="histList"></div>
+    <div class="foot"><button class="btn ghost danger" data-clear>Clear history</button><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    let key = '';
+    const render = () => {
+      const list = (S && S.history) || [];
+      const k = JSON.stringify(list) + '|' + Math.floor(Date.now() / 60000);
+      if (k === key) return;
+      key = k;
+      m.querySelector('[data-clear]').disabled = !list.length;
+      m.querySelector('#histList').innerHTML = list.length ? list.map(v => {
+        const acc = S.accounts.find(a => a.id === v.userId);
+        const who = acc ? (acc.alias || acc.username) : 'removed account';
+        return `<div class="hist-row"><div class="txt"><b>${esc(v.name)}</b><span>${v.private ? 'Private server' : 'Server ' + esc(v.gameId.slice(0, 8))} · <em class="anon-t">${esc(who)}</em> · ${ago(v.time)}</span></div>
+          <button class="btn sm good" data-join="${esc(v.gameId)}">${icon('play')}Rejoin</button>
+          <button class="btn icon sm ghost" data-copy="${esc(v.gameId)}" title="Copy server ID">${icon('clipboard')}</button>
+          <button class="btn icon sm ghost" data-del="${esc(v.gameId)}" title="Remove from history">${icon('x')}</button></div>`;
+      }).join('') : '<div class="hist-empty">No servers yet. They show up here a little after an account joins a game.</div>';
+    };
+    m.querySelector('#histList').onclick = e => {
+      const j = e.target.closest('[data-join]'), c = e.target.closest('[data-copy]'), d = e.target.closest('[data-del]');
+      if (j) { send('historyJoin', { gameId: j.dataset.join, ids: orderedSelection() }); close(); historyRefresh = null; }
+      else if (c) { navigator.clipboard.writeText(c.dataset.copy).then(() => toast('ok', 'Server ID copied.'), () => {}); }
+      else if (d) send('historyRemove', { gameId: d.dataset.del });
+    };
+    m.querySelector('[data-clear]').onclick = () => send('historyClear');
+    m.querySelector('[data-x]').onclick = () => { historyRefresh = null; close(); };
+    historyRefresh = render;
+    render();
+  }, 'wide');
+};
+
+let serversRefresh = null;
+$('#btnServers').onclick = () => {
+  if (!S || !(S.placeId > 0)) { toast('info', 'Set a Place ID first, then browse its servers.'); return; }
+  let mode = 'biggest', region = '', hideFull = true, key = '';
+  const load = () => { key = ''; send('serversLoad', { smallest: mode === 'smallest', ids: orderedSelection() }); };
+  openModal(`<h3>Servers</h3>
+    <p id="svSub">Public servers for this place. Regions fill in a few at a time.</p>
+    <div class="sv-bar">
+      <div class="ar-seg" id="svMode"><button data-m="biggest">Biggest</button><button data-m="smallest">Smallest</button><button data-m="ping">Best ping</button></div>
+      <button class="adapter" id="svRegion"><span id="svRegionLbl">All regions</span><span class="chev">${icon('chevron')}</span></button>
+      <button class="btn toggle sm" id="svFull" title="Leave out servers with no free slot"><span class="sw"></span>Hide full</button>
+      <button class="btn icon sm" id="svReload" title="Refresh">${icon('refresh')}</button>
     </div>
-    <div class="foot"><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    <div class="hist sv-list" id="svList"></div>
+    <div class="foot"><span class="s-note" id="svNote" style="margin:0 auto 0 0"></span><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    const render = () => {
+      const sv = (S && S.servers) || { rows: [] };
+      m.querySelectorAll('[data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+      m.querySelector('#svFull').classList.toggle('on', hideFull);
+      m.querySelector('#svRegionLbl').textContent = region || 'All regions';
+      const k = JSON.stringify(sv) + mode + region + hideFull;
+      if (k === key) return;
+      key = k;
+      let rows = sv.rows.map(r => ({ id: r[0], playing: r[1], max: r[2], ping: r[3], fps: r[4], region: r[5], tried: r[6] }));
+      const total = rows.length, known = rows.filter(r => r.region).length;
+      if (hideFull) rows = rows.filter(r => r.playing < r.max);
+      if (region) rows = rows.filter(r => r.region === region);
+      if (mode === 'ping') rows = rows.slice().sort((a, b) => a.ping - b.ping);
+      const place = S.place && S.place.loaded ? S.place.name : 'this place';
+      m.querySelector('#svSub').textContent = `Public servers for ${place}. Join sends the selected accounts, or the top one.`;
+      m.querySelector('#svNote').innerHTML = sv.loading ? '' : icon('info') + `${total} servers loaded · ${known} regions found`;
+      m.querySelector('#svList').innerHTML = sv.loading ? '<div class="hist-empty"><span class="spin"></span></div>'
+        : sv.error ? `<div class="hist-empty">${esc(sv.error)}</div>`
+        : !rows.length ? '<div class="hist-empty">No servers match these filters.</div>'
+        : rows.map(r => `<div class="hist-row sv-row">
+            <div class="sv-pl"><b>${r.playing}<span>/${r.max}</span></b><i><em style="width:${Math.round(100 * r.playing / Math.max(1, r.max))}%"></em></i></div>
+            <div class="txt"><b>${r.region ? esc(r.region) : r.tried ? 'Unknown region' : '<span class="sv-wait">Finding region…</span>'}</b><span>${r.ping} ms avg ping · ${r.fps} fps · ${esc(r.id.slice(0, 8))}</span></div>
+            <button class="btn sm good" data-join="${esc(r.id)}">${icon('play')}Join</button>
+            <button class="btn icon sm ghost" data-copy="${esc(r.id)}" title="Copy server ID">${icon('clipboard')}</button></div>`).join('');
+    };
+    m.querySelector('#svMode').onclick = e => {
+      const b = e.target.closest('[data-m]');
+      if (!b) return;
+      const refetch = (b.dataset.m === 'smallest') !== (mode === 'smallest');
+      mode = b.dataset.m;
+      if (refetch) load();
+      render();
+    };
+    m.querySelector('#svRegion').onclick = e => {
+      const counts = {};
+      ((S.servers || {}).rows || []).forEach(r => { if (r[5]) counts[r[5]] = (counts[r[5]] || 0) + 1; });
+      const names = Object.keys(counts).sort();
+      openMenu(e.currentTarget, [{ icon: 'globe', label: 'All regions', active: !region, on: () => { region = ''; render(); } }]
+        .concat(names.length ? ['-'] : [])
+        .concat(names.map(n => ({ icon: 'target', label: n, meta: String(counts[n]), active: n === region, on: () => { region = n; render(); } }))), { width: 260 });
+    };
+    m.querySelector('#svFull').onclick = () => { hideFull = !hideFull; render(); };
+    m.querySelector('#svReload').onclick = load;
+    m.querySelector('#svList').onclick = e => {
+      const j = e.target.closest('[data-join]'), c = e.target.closest('[data-copy]');
+      if (j) { send('joinServer', { placeId: S.servers.placeId, gameId: j.dataset.join, ids: orderedSelection() }); serversRefresh = null; close(); }
+      else if (c) navigator.clipboard.writeText(c.dataset.copy).then(() => toast('ok', 'Server ID copied.'), () => {});
+    };
+    m.querySelector('[data-x]').onclick = () => { serversRefresh = null; close(); };
+    serversRefresh = render;
+    if (S.servers) { S.servers.loading = true; S.servers.rows = []; S.servers.error = ''; }
+    load();
+    render();
+  }, 'wide');
+};
+
+let friendsRefresh = null;
+$('#btnFriends').onclick = () => {
+  if (!S || !S.accounts.length) { toast('info', 'Add an account first.'); return; }
+  let who = (orderedSelection()[0]) || S.accounts[0].id, key = '';
+  const load = () => { key = ''; if (S.friends) { S.friends.loading = true; S.friends.rows = []; S.friends.userId = who; } send('friendsLoad', { userId: who }); };
+  openModal(`<h3>Friends in game</h3>
+    <p>Friends of the chosen account who are playing right now. Join sends the selected accounts, or that account, into the same server.</p>
+    <div class="sv-bar">
+      <button class="adapter" id="frWho" style="flex:1"><span id="frWhoLbl" class="anon-t"></span><span class="chev">${icon('chevron')}</span></button>
+      <button class="btn icon sm" id="frReload" title="Refresh">${icon('refresh')}</button>
+    </div>
+    <div class="hist" id="frList"></div>
+    <div class="foot"><span class="s-note" id="frNote" style="margin:0 auto 0 0"></span><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    const render = () => {
+      const fr = (S && S.friends) || { rows: [] }, acc = accById(who);
+      m.querySelector('#frWhoLbl').textContent = acc ? (acc.alias || acc.username) : 'Pick an account';
+      const k = JSON.stringify(fr) + who;
+      if (k === key) return;
+      key = k;
+      const mine = fr.userId === who;
+      m.querySelector('#frNote').innerHTML = mine && !fr.loading && !fr.error ? icon('info') + `${fr.rows.length} in game · ${fr.online} online · ${fr.total} friends` : '';
+      m.querySelector('#frList').innerHTML = !mine || fr.loading ? '<div class="hist-empty"><span class="spin"></span></div>'
+        : fr.error ? `<div class="hist-empty">${esc(fr.error)}</div>`
+        : !fr.rows.length ? '<div class="hist-empty">None of this account\'s friends are in a game right now.</div>'
+        : fr.rows.map(f => `<div class="hist-row">
+            ${f.avatar ? `<img class="av" src="${esc(f.avatar)}" alt="" draggable="false">` : `<div class="av">${esc((f.display || f.name).charAt(0).toUpperCase())}</div>`}
+            <div class="txt"><b>${esc(f.display || f.name)}${f.display && f.display !== f.name ? ` <span class="fr-un">@${esc(f.name)}</span>` : ''}</b><span>${esc(f.game || 'In a game')}</span></div>
+            ${f.gameId ? `<button class="btn sm good" data-join="${esc(f.gameId)}" data-place="${f.placeId}">${icon('play')}Join</button>` : '<span class="fr-off" title="This friend doesn\'t let others join their game">Joins off</span>'}</div>`).join('');
+    };
+    m.querySelector('#frWho').onclick = e => openMenu(e.currentTarget, S.accounts.map(a => ({
+      icon: 'user', label: a.alias || a.username, active: a.id === who, on: () => { who = a.id; load(); render(); }
+    })), { width: 300 });
+    m.querySelector('#frReload').onclick = () => { load(); render(); };
+    m.querySelector('#frList').onclick = e => {
+      const j = e.target.closest('[data-join]');
+      if (!j) return;
+      const ids = orderedSelection();
+      send('joinServer', { placeId: +j.dataset.place, gameId: j.dataset.join, ids: ids.length ? ids : [who] });
+      friendsRefresh = null;
+      close();
+    };
+    m.querySelector('[data-x]').onclick = () => { friendsRefresh = null; close(); };
+    friendsRefresh = render;
+    load();
+    render();
+  }, 'wide');
+};
+
+const fmtPlay = mins => mins < 1 ? 'under a minute' : mins < 60 ? mins + 'm' : Math.floor(mins / 60) + 'h ' + String(mins % 60).padStart(2, '0') + 'm';
+let playtimeRefresh = null;
+$('#btnPlaytime').onclick = () => {
+  let who = 0, key = '';
+  openModal(`<h3>Playtime</h3>
+    <p>Time your accounts have had a game open, counted while the client is running. Sub-places count towards their main game.</p>
+    <div class="sv-bar"><button class="adapter" id="ptWho" style="flex:1"><span id="ptWhoLbl"></span><span class="chev">${icon('chevron')}</span></button></div>
+    <div class="pt-sum" id="ptSum"></div>
+    <div class="hist" id="ptList"></div>
+    <div class="foot"><button class="btn ghost danger" data-clear>Reset playtime</button><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    const render = () => {
+      const pt = (S && S.playtime) || { games: {}, entries: [], active: {} };
+      const k = JSON.stringify(pt) + who + '|' + Math.floor(Date.now() / 60000);
+      if (k === key) return;
+      key = k;
+      const acc = who ? accById(who) : null;
+      const rows = {};
+      for (const [user, uni, mins, last] of pt.entries) {
+        if (who && user !== who) continue;
+        const r = rows[uni] || (rows[uni] = { uni, mins: 0, last: 0, by: [] });
+        r.mins += mins;
+        r.last = Math.max(r.last, last * 300);
+        r.by.push([user, mins]);
+      }
+      const list = Object.values(rows).sort((a, b) => b.mins - a.mins), top = Math.max(1, ...list.map(r => r.mins));
+      const total = list.reduce((n, r) => n + r.mins, 0);
+      const live = new Set(Object.entries(pt.active).filter(([u]) => !who || +u === who).map(([, uni]) => uni));
+      m.querySelector('#ptWhoLbl').textContent = acc ? (acc.alias || acc.username) : 'All accounts';
+      m.querySelector('#ptWhoLbl').classList.toggle('anon-t', !!acc);
+      m.querySelector('[data-clear]').disabled = !pt.entries.length;
+      const best = list[0] && (pt.games[list[0].uni] || {}).name;
+      m.querySelector('#ptSum').innerHTML = list.length ? `
+        <div><b>${fmtPlay(total)}</b><span>Total played</span></div>
+        <div><b>${list.length}</b><span>${list.length === 1 ? 'Game' : 'Games'}</span></div>
+        <div><b class="t">${esc(best || '—')}</b><span>Most played</span></div>` : '';
+      m.querySelector('#ptList').innerHTML = list.length ? list.map((r, i) => {
+        const g = pt.games[r.uni] || {};
+        return `<div class="hist-row pt-row">
+          <span class="pt-rank">${i + 1}</span>
+          ${g.icon ? `<img class="pt-ic" src="${esc(g.icon)}" alt="" draggable="false">` : `<div class="pt-ic">${icon('gamepad')}</div>`}
+          <div class="txt">
+            <div class="pt-top"><b>${esc(g.name || 'Game ' + r.uni)}</b>${live.has(r.uni) ? '<em class="pidpill"><i class="rdot"></i>Playing now</em>' : ''}<strong>${fmtPlay(r.mins)}</strong></div>
+            <i class="pt-bar"><em style="width:${Math.max(2, Math.round(100 * r.mins / top))}%"></em></i>
+            <span>${r.last ? 'Last played ' + ago(r.last) : ''}</span></div></div>`;
+      }).join('') : '<div class="hist-empty">Nothing yet. Time is counted from the next game you launch from here.</div>';
+    };
+    m.querySelector('#ptWho').onclick = e => openMenu(e.currentTarget, [{ icon: 'users', label: 'All accounts', active: !who, on: () => { who = 0; render(); } }, '-']
+      .concat(S.accounts.map(a => ({ icon: 'user', label: a.alias || a.username, active: a.id === who, on: () => { who = a.id; render(); } }))), { width: 300 });
+    m.querySelector('[data-clear]').onclick = () => confirmModal({ title: 'Reset playtime?', html: 'All recorded playtime for every account and game is erased.', ok: 'Reset', danger: true, onOk: () => send('playtimeClear') });
+    m.querySelector('[data-x]').onclick = () => { playtimeRefresh = null; close(); };
+    playtimeRefresh = render;
+    render();
+  }, 'wide');
+};
+
+const FFLAGS = [
+  ['Rendering', [
+    ['FFlagDebugGraphicsPreferD3D11', 'Prefer Direct3D 11'],
+    ['FFlagDebugGraphicsPreferVulkan', 'Prefer Vulkan'],
+    ['FFlagDebugGraphicsPreferOpenGL', 'Prefer OpenGL'],
+    ['DFIntDebugFRMQualityLevelOverride', 'Graphics quality level', '1 – 21'],
+    ['FIntDebugForceMSAASamples', 'Anti-aliasing samples (MSAA)', '0, 1, 2, 4'],
+    ['DFFlagTextureQualityOverrideEnabled', 'Override texture quality'],
+    ['DFIntTextureQualityOverride', 'Texture quality', '0 – 3'],
+    ['DFFlagDebugPauseVoxelizer', 'Pause voxel lighting'],
+    ['FFlagDebugSkyGray', 'Plain gray sky'],
+    ['FIntFRMMaxGrassDistance', 'Grass max distance', 'studs'],
+    ['FIntFRMMinGrassDistance', 'Grass min distance', 'studs'],
+    ['DFFlagDisableDPIScale', 'Disable DPI scaling'],
+    ['FFlagHandleAltEnterFullscreenManually', 'Handle Alt+Enter fullscreen manually']
+  ]],
+  ['Geometry', [
+    ['DFIntCSGLevelOfDetailSwitchingDistance', 'Mesh detail distance (level 0 → 1)', 'studs'],
+    ['DFIntCSGLevelOfDetailSwitchingDistanceL12', 'Mesh detail distance (level 1 → 2)', 'studs'],
+    ['DFIntCSGLevelOfDetailSwitchingDistanceL23', 'Mesh detail distance (level 2 → 3)', 'studs'],
+    ['DFIntCSGLevelOfDetailSwitchingDistanceL34', 'Mesh detail distance (level 3 → 4)', 'studs']
+  ]],
+  ['Interface', [
+    ['FIntGrassMovementReducedMotionFactor', 'Grass movement', '0 = still']
+  ]]
+];
+const flagIsInt = n => /^D?FInt/.test(n);
+let flagsRefresh = null;
+function flagsModal() {
+  openModal(`<h3>Fast flags</h3>
+    <p>These are the only flags Roblox still accepts from your PC. Leave one on <b>Default</b> to let Roblox decide. Changes apply the next time a client starts.</p>
+    <div class="ff-list">${FFLAGS.map(([group, flags]) => `<div class="ff-h">${group}</div>` + flags.map(([name, label, hint]) =>
+      `<div class="ff-row" data-flag="${name}"><div class="txt"><b>${label}</b><code>${name}</code></div>${flagIsInt(name)
+        ? `<div class="field"><input inputmode="numeric" maxlength="9" spellcheck="false" placeholder="Default${hint ? ' (' + hint + ')' : ''}"></div>`
+        : '<div class="ar-seg"><button data-v="">Default</button><button data-v="true">On</button><button data-v="false">Off</button></div>'}</div>`).join('')).join('')}</div>
+    <div class="foot"><button class="btn ghost danger" data-reset>Reset all</button><span style="flex:1"></span><button class="btn" data-paste title="Paste a JSON table of flags">${icon('clipboard')}Paste</button><button class="btn" data-import title="Load flags from a ClientAppSettings.json file">${icon('download')}Import</button><button class="btn" data-export title="Save your flags as a ClientAppSettings.json file">${icon('external')}Export</button><button class="btn primary" data-x>Done</button></div>`, (m, close) => {
+    m.querySelector('[data-import]').onclick = () => send('flagsImport');
+    m.querySelector('[data-paste]').onclick = () => openModal(`<h3>Paste fast flags</h3>
+      <p>Paste a JSON table of flags, like the contents of a <b>ClientAppSettings.json</b>. Flags Roblox no longer accepts are skipped.</p>
+      <textarea data-json spellcheck="false" placeholder='{\n  "FFlagDebugGraphicsPreferVulkan": true,\n  "DFIntTextureQualityOverride": 3\n}'></textarea>
+      <div class="s-note" data-err hidden></div>
+      <div class="foot"><button class="btn ghost" data-x>Cancel</button><button class="btn primary" data-ok>Import</button></div>`, (pm, pclose) => {
+      const ta = pm.querySelector('[data-json]'), err = pm.querySelector('[data-err]');
+      pm.querySelector('[data-x]').onclick = pclose;
+      pm.querySelector('[data-ok]').onclick = () => {
+        let parsed = null;
+        try { parsed = JSON.parse(ta.value); } catch (e) {}
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          err.hidden = false;
+          err.innerHTML = icon('alert') + 'That isn\u2019t a JSON table. It should look like { "FlagName": value }.';
+          ta.focus();
+          return;
+        }
+        send('flagsImportText', { text: ta.value });
+        pclose();
+      };
+      setTimeout(() => ta.focus(), 0);
+    });
+    m.querySelector('[data-export]').onclick = () => send('flagsExport');
+    const refresh = () => {
+      const f = (S && S.fflags) || {};
+      m.querySelectorAll('[data-flag]').forEach(row => {
+        const v = f[row.dataset.flag] || '';
+        row.classList.toggle('set', v !== '');
+        row.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+        const inp = row.querySelector('input');
+        if (inp && document.activeElement !== inp) inp.value = v;
+      });
+      m.querySelector('[data-reset]').disabled = !Object.keys(f).length;
+    };
+    const set = (name, value) => { if (!S) return; S.fflags = S.fflags || {}; if (value === '') delete S.fflags[name]; else S.fflags[name] = value; refresh(); send('flagSet', { name, value }); };
+    m.querySelectorAll('[data-flag]').forEach(row => {
+      const name = row.dataset.flag;
+      row.querySelectorAll('[data-v]').forEach(b => b.onclick = () => set(name, b.dataset.v));
+      const inp = row.querySelector('input');
+      if (inp) {
+        const commit = () => { const v = inp.value.trim(); if (v === '' || /^-?\d{1,8}$/.test(v)) { if (v !== ((S.fflags || {})[name] || '')) set(name, v); } else inp.value = (S.fflags || {})[name] || ''; };
+        inp.addEventListener('change', commit);
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+      }
+    });
+    m.querySelector('[data-reset]').onclick = () => confirmModal({ title: 'Reset all fast flags?', html: 'Every flag goes back to Roblox\u2019s default.', ok: 'Reset', danger: true, onOk: () => { if (S) S.fflags = {}; refresh(); send('flagsReset'); } });
+    m.querySelector('[data-x]').onclick = () => { flagsRefresh = null; close(); };
+    flagsRefresh = refresh;
+    refresh();
+  }, 'wide');
+}
+
+let settingsRefresh = null, settingsTab = 'look';
+const SET_TABS = [
+  ['look', 'palette', 'Appearance', 'Pick a theme, or your own background colour'],
+  ['roblox', 'type', 'Roblox client', 'Change how the game itself looks and sounds'],
+  ['windows', 'layout', 'Window layout', 'Tile every Roblox window across a display'],
+  ['general', 'chat', 'Discord & updates', 'Rich Presence and how the tool updates'],
+  ['network', 'wifi', 'Network & cookies', 'MAC address and leftover Roblox logins']
+];
+$('#btnSettings').onclick = () => {
+  openModal(`<nav class="snav">
+      <div class="snav-t">Settings</div>
+      <span class="snav-ind" aria-hidden="true"></span>
+      ${SET_TABS.map(([id, ic, name]) => `<button class="snav-i" data-tab="${id}">${icon(ic)}<span>${name}</span></button>`).join('')}
+    </nav>
+    <div class="sbody">
+      <header class="shead"><div><b id="setTitle"></b><span id="setSub"></span></div><button class="btn icon sm ghost" data-x title="Close">${icon('x')}</button></header>
+      <div class="spanes">
+        <div class="spane" data-pane="look">
+          <div class="slabel">Theme</div>
+          <div class="theme-grid" id="setThemes"></div>
+          <div class="slabel">Accent colour</div>
+          <div class="accent-row" id="setAccents"></div>
+          <div class="slabel">Shape and spacing</div>
+          <div class="srow"><div class="st"><b>Corners</b><span>How rounded buttons and panels are</span></div><div class="sc"><div class="ar-seg" id="setRadius"><button data-opt="sharp">Sharp</button><button data-opt="default">Default</button><button data-opt="round">Round</button></div></div></div>
+          <div class="srow"><div class="st"><b>Density</b><span>Compact fits more accounts on screen</span></div><div class="sc"><div class="ar-seg" id="setDensity"><button data-opt="comfortable">Comfortable</button><button data-opt="compact">Compact</button></div></div></div>
+          <div class="srow"><div class="st"><b>Glow</b><span>Soft halo on the main button and switches</span></div><div class="sc"><button class="btn toggle bare" id="setGlow"><span class="sw"></span></button></div></div>
+          <div class="srow"><div class="st"><b>Reduce motion</b><span>Turn off the animations when things open, close and change</span></div><div class="sc"><button class="btn toggle bare" id="setMotion"><span class="sw"></span></button></div></div>
+          <div class="slabel">Privacy and safety</div>
+          <div class="srow"><div class="st"><b>Anonymous mode</b><span>Hide account names, IDs and avatars, for screenshots and streams</span></div><div class="sc"><button class="btn toggle bare" id="setAnon"><span class="sw"></span></button></div></div>
+          <div class="srow"><div class="st"><b>Confirm Kill All</b><span>Ask before closing every Roblox client</span></div><div class="sc"><button class="btn toggle bare" id="setConfirmKill"><span class="sw"></span></button></div></div>
+        </div>
+        <div class="spane" data-pane="roblox">
+          <div class="srow"><div class="st"><b>Font</b><span>One .ttf, .otf or .ttc for all in-game text</span></div><div class="sc"><button class="btn sm" id="fontPick" data-i="type"><span id="fontPickLbl">Choose…</span></button><button class="btn toggle bare" id="fontOn" title="Use the custom font"><span class="sw"></span></button></div></div>
+          <div id="modRows"></div>
+          <div class="srow"><div class="st"><b>Fast flags</b><span>The 18 rendering flags Roblox still accepts</span></div><div class="sc"><button class="btn sm" id="flagsBtn" data-i="flag"><span id="flagsLbl">Configure</span></button></div></div>
+          <div class="s-note">${icon('info')}Applied to every install, Bloxstrap and Fishstrap included. Restart Roblox to see a change.</div>
+        </div>
+        <div class="spane" data-pane="windows">
+          <div class="ar-grid" id="arPresets"></div>
+          <div class="srow"><div class="st"><b>Spacing</b></div><div class="sc"><div class="ar-seg" id="arGap"><button data-gap="0">None</button><button data-gap="6">Tight</button><button data-gap="14">Roomy</button></div></div></div>
+          <div class="srow"><div class="st"><b>Display</b></div><div class="sc"><button class="adapter" id="arMon"><span id="arMonName">Main display</span><span class="chev" data-i="chevron"></span></button></div></div>
+          <div class="srow"><div class="st"><b>Auto-arrange</b><span>Re-tile when a Roblox window opens or closes</span></div><div class="sc"><button class="btn toggle bare" id="arAuto"><span class="sw"></span></button></div></div>
+          <button class="btn primary sm sfull" id="arNow" data-i="layout"><span id="arNowLbl">Arrange now</span></button>
+        </div>
+        <div class="spane" data-pane="general">
+          <div class="slabel">Discord</div>
+          <div class="srow"><div class="st"><b>Rich Presence</b><span>Show the game you launched, with its thumbnail</span></div><div class="sc"><button class="btn toggle bare" id="rpcOn"><span class="sw"></span></button></div></div>
+          <div class="srow"><div class="st"><b>Time played</b><span>What the timer on the card shows</span></div><div class="sc"><div class="ar-seg" id="rpcTime"><button data-tm="0">Real</button><button data-tm="1">Custom</button><button data-tm="2">Hidden</button></div></div></div>
+          <div class="srow" id="rpcCustom" hidden><div class="st"><b>Start the timer at</b><span>It keeps counting up from here</span></div><div class="sc"><div class="field tfield"><input id="rpcH" inputmode="numeric" maxlength="4" spellcheck="false" placeholder="0"><i>h</i></div><div class="field tfield"><input id="rpcM" inputmode="numeric" maxlength="2" spellcheck="false" placeholder="0"><i>m</i></div></div></div>
+          <div class="s-note" id="rpcNote" hidden></div>
+          <div class="slabel">Updates</div>
+          <div class="srow"><div class="st"><b>Ask at startup</b><span>Offer new builds when the tool opens</span></div><div class="sc"><button class="btn toggle bare" id="updNotify"><span class="sw"></span></button></div></div>
+          <div class="srow"><div class="st"><b>Auto-update</b><span>Install new builds without asking</span></div><div class="sc"><button class="btn toggle bare" id="updAutoBtn"><span class="sw"></span></button></div></div>
+          <button class="btn sm sfull" id="updBtn"><span id="updLbl">Check for updates</span></button>
+          <div class="s-note" id="updNote" hidden></div>
+        </div>
+        <div class="spane" data-pane="network">
+          <div class="slabel">MAC address</div>
+          <button class="adapter sfull" id="setAdapter" style="margin-top:0"><span id="setAdapterName">Loading adapters…</span><span class="mac" id="setAdapterMac"></span><span class="chev" data-i="chevron"></span></button>
+          <div class="row2 mt"><button class="btn sm" id="setSpoof" style="flex:1" data-i="shuffle"><span id="setSpoofLbl">Spoof MAC</span></button><button class="btn sm" id="setRevert" style="flex:1" data-i="undo">Revert MAC</button></div>
+          <div class="s-note">${icon('info')}The adapter restarts, so your internet drops for a few seconds.</div>
+          <div class="s-note" id="setAdminNote" hidden>${icon('shield')}Needs administrator rights — you'll be asked to restart as admin.</div>
+          <div class="slabel">Roblox cookies</div>
+          <div class="srow"><div class="st"><b>Clear login files</b><span>For stock Roblox, Bloxstrap and Fishstrap. Saved accounts stay.</span></div><div class="sc"><button class="btn sm amber" id="setCookies" data-i="cookie"><span id="setCookiesLbl">Clear</span></button></div></div>
+        </div>
+      </div>
+    </div>`, (m, close) => {
     m.querySelectorAll('[data-i]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.i)));
     buildThemeGrid(m.querySelector('#setThemes'));
+    const ACCENTS = [['#eef0f4', 'Silver'], ['#7cc4ff', 'Sky'], ['#8b9dff', 'Indigo'], ['#b79bff', 'Violet'], ['#ff8fc7', 'Pink'], ['#ff7a7a', 'Coral'], ['#f2b552', 'Amber'], ['#43d18f', 'Mint'], ['#4fd6d0', 'Teal']];
+    const buildAccents = () => {
+      const cur = (theme.accent || '').toLowerCase(), preset = ACCENTS.some(a => a[0] === cur);
+      m.querySelector('#setAccents').innerHTML = ACCENTS.map(([hex, name]) =>
+        `<button class="accent-sw${hex === cur ? ' on' : ''}" data-accent="${hex}" title="${name}" aria-label="${name} accent" style="--c:${hex}"></button>`).join('') +
+        `<label class="accent-sw custom${preset ? '' : ' on'}" title="Pick your own accent colour" style="--c:${preset ? 'transparent' : cur}">${preset ? icon('plus') : ''}<input type="color" value="${isHex(cur) ? cur : '#eef0f4'}"></label>`;
+      m.querySelectorAll('#setRadius [data-opt]').forEach(b => b.classList.toggle('on', b.dataset.opt === theme.radius));
+      m.querySelectorAll('#setDensity [data-opt]').forEach(b => b.classList.toggle('on', b.dataset.opt === theme.density));
+      m.querySelector('#setGlow').classList.toggle('on', theme.glow !== 'off');
+      m.querySelector('#setMotion').classList.toggle('on', theme.motion === 'off');
+      m.querySelector('#setAnon').classList.toggle('on', theme.anon === 'on');
+      m.querySelector('#setConfirmKill').classList.toggle('on', theme.confirmKill !== 'off');
+    };
+    buildAccents();
+    m.querySelector('#setAccents').addEventListener('click', e => { const b = e.target.closest('[data-accent]'); if (b) { theme.setAccent(b.dataset.accent); buildAccents(); } });
+    m.querySelector('#setAccents').addEventListener('input', e => { if (e.target.type === 'color') { theme.setAccent(e.target.value); m.querySelectorAll('.accent-sw').forEach(x => x.classList.remove('on')); const l = e.target.closest('.accent-sw'); l.classList.add('on'); l.style.setProperty('--c', e.target.value); const ic = l.querySelector('svg'); if (ic) ic.remove(); } });
+    m.querySelector('#setRadius').onclick = e => { const b = e.target.closest('[data-opt]'); if (b) { theme.setOpt('radius', b.dataset.opt); buildAccents(); } };
+    m.querySelector('#setDensity').onclick = e => { const b = e.target.closest('[data-opt]'); if (b) { theme.setOpt('density', b.dataset.opt); buildAccents(); } };
+    m.querySelector('#setGlow').onclick = () => { theme.setOpt('glow', theme.glow === 'off' ? 'on' : 'off'); buildAccents(); };
+    m.querySelector('#setAnon').onclick = () => { theme.setOpt('anon', theme.anon === 'on' ? 'off' : 'on'); replay($('#list'), 'swap', 700); buildAccents(); };
+    m.querySelector('#setConfirmKill').onclick = () => { theme.setOpt('confirmKill', theme.confirmKill === 'off' ? 'on' : 'off'); buildAccents(); };
+    m.querySelector('#setMotion').onclick = () => { theme.setOpt('motion', theme.motion === 'off' ? 'on' : 'off'); buildAccents(); };
 
     const refresh = () => {
       if (!S) return;
@@ -1649,14 +2232,35 @@ $('#btnSettings').onclick = () => {
       m.querySelector('#setRevert').disabled = !a || n.busy;
       m.querySelector('#setSpoofLbl').textContent = n.busy ? 'Working…' : 'Spoof MAC';
       m.querySelector('#setCookies').disabled = !!n.cookieBusy;
-      m.querySelector('#setCookiesLbl').textContent = n.cookieBusy ? 'Clearing…' : 'Clear Roblox cookies';
+      m.querySelector('#setCookiesLbl').textContent = n.cookieBusy ? 'Clearing…' : 'Clear';
       m.querySelector('#setAdminNote').hidden = !!S.elevated;
       refreshArrange(m);
       const f = S.font || {};
-      m.querySelector('#fontPickLbl').textContent = f.has ? f.name : 'Choose font…';
+      m.querySelector('#fontPickLbl').textContent = f.has ? f.name : 'Choose…';
       m.querySelector('#fontPick').title = f.has ? 'Pick a different font file' : 'Pick a font file';
       m.querySelector('#fontOn').classList.toggle('on', !!f.enabled);
       m.querySelector('#fontOn').disabled = !f.has;
+      const modIcons = { cursor: 'pointer', shiftlock: 'lock', death: 'volume' };
+      const modsKey = JSON.stringify(S.mods || []);
+      const modRows = m.querySelector('#modRows');
+      if (modRows.dataset.key !== modsKey) {
+        modRows.dataset.key = modsKey;
+        const modHints = { cursor: '.png, 64×64 works best', shiftlock: '.png, shown while shift-locked', death: '.ogg, played when you die' };
+        modRows.innerHTML = (S.mods || []).map(d => `<div class="srow"><div class="st"><b>${esc(d.label)}</b><span>${modHints[d.id] || ''}</span></div><div class="sc">
+          <button class="btn sm" data-mod="${d.id}" title="${d.active ? 'Pick a different file' : 'Pick a file'}">${icon(modIcons[d.id] || 'file')}<span>${d.active ? esc(d.file) : 'Choose…'}</span></button>
+          <button class="btn icon sm ghost" data-modclear="${d.id}" title="Back to Roblox's default" ${d.active ? '' : 'disabled'}>${icon('undo')}</button></div></div>`).join('');
+      }
+      const nFlags = Object.keys(S.fflags || {}).length;
+      m.querySelector('#flagsLbl').textContent = nFlags ? `${nFlags} set` : 'Configure';
+      const rpc = S.discord || {};
+      m.querySelector('#rpcOn').classList.toggle('on', !!rpc.enabled);
+      const tm = rpc.timeMode || 0, off = rpc.timeOffset || 0;
+      m.querySelectorAll('[data-tm]').forEach(b => b.classList.toggle('on', +b.dataset.tm === tm));
+      m.querySelector('#rpcCustom').hidden = tm !== 1;
+      const rh = m.querySelector('#rpcH'), rm = m.querySelector('#rpcM');
+      if (document.activeElement !== rh && document.activeElement !== rm) { rh.value = Math.floor(off / 3600) || ''; rm.value = Math.floor(off % 3600 / 60) || ''; }
+      m.querySelector('#rpcNote').hidden = !rpc.enabled;
+      m.querySelector('#rpcNote').innerHTML = icon(rpc.connected ? 'ok' : 'info') + (rpc.connected ? 'Connected to Discord.' : 'Shows up once a game is running and Discord is open.');
       const u = S.update || { status: 'idle', message: '' };
       const busy = u.status === 'checking' || u.status === 'downloading' || u.status === 'ready';
       m.querySelector('#updBtn').disabled = busy;
@@ -1691,6 +2295,26 @@ $('#btnSettings').onclick = () => {
     };
     wireArrange(m);
     m.querySelector('#fontPick').onclick = () => send('fontPick');
+    m.querySelector('#modRows').onclick = e => {
+      const pick = e.target.closest('[data-mod]'), clear = e.target.closest('[data-modclear]');
+      if (pick) send('modPick', { id: pick.dataset.mod });
+      else if (clear && !clear.disabled) send('modClear', { id: clear.dataset.modclear });
+    };
+    m.querySelector('#flagsBtn').onclick = flagsModal;
+    const sendRpcTime = mode => {
+      if (!S) return;
+      const h = Math.min(9999, parseInt(m.querySelector('#rpcH').value, 10) || 0), mi = Math.min(59, parseInt(m.querySelector('#rpcM').value, 10) || 0);
+      S.discord = Object.assign(S.discord || {}, { timeMode: mode, timeOffset: h * 3600 + mi * 60 });
+      refresh();
+      send('discordTime', { mode, offset: h * 3600 + mi * 60 });
+    };
+    m.querySelector('#rpcTime').onclick = e => { const b = e.target.closest('[data-tm]'); if (b) sendRpcTime(+b.dataset.tm); };
+    ['#rpcH', '#rpcM'].forEach(id => {
+      const inp = m.querySelector(id);
+      inp.addEventListener('change', () => sendRpcTime(1));
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+    });
+    m.querySelector('#rpcOn').onclick = () => { if (!S) return; S.discord = S.discord || {}; S.discord.enabled = !S.discord.enabled; refresh(); send('discordSet', { enabled: S.discord.enabled }); };
     m.querySelector('#updNotify').onclick = () => { if (!S || !S.update) return; S.update.notify = S.update.notify === false; refresh(); send('updateSettings', { notify: S.update.notify }); };
     m.querySelector('#updAutoBtn').onclick = () => { if (!S || !S.update) return; S.update.auto = !S.update.auto; refresh(); send('updateSettings', { auto: S.update.auto }); };
     m.querySelector('#updBtn').onclick = () => send(S && S.update && S.update.status === 'available' ? 'updateInstall' : 'updateCheck');
@@ -1701,7 +2325,38 @@ $('#btnSettings').onclick = () => {
       ok: 'Clear cookies', danger: true, onOk: () => send('clearCookies')
     });
     m.querySelector('[data-x]').onclick = () => { settingsRefresh = null; close(); };
-  }, 'wide');
+    let tabTimer = 0;
+    const showTab = (id, instant) => {
+      const t = SET_TABS.find(x => x[0] === id) || SET_TABS[0];
+      const from = SET_TABS.findIndex(x => x[0] === settingsTab), to = SET_TABS.indexOf(t);
+      settingsTab = t[0];
+      const btn = m.querySelector(`[data-tab="${t[0]}"]`), ind = m.querySelector('.snav-ind');
+      m.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b === btn));
+      if (instant) ind.style.transition = 'none';
+      ind.style.setProperty('--y', btn.offsetTop + 'px');
+      if (instant) { void ind.offsetHeight; ind.style.transition = ''; }
+      const panes = m.querySelector('.spanes'), head = m.querySelector('.shead div');
+      const next = m.querySelector(`[data-pane="${t[0]}"]`), cur = m.querySelector('.spane.on');
+      const swap = () => {
+        m.querySelectorAll('.spane').forEach(p => p.classList.remove('on', 'leaving'));
+        next.classList.add('on');
+        panes.scrollTop = 0;
+        m.querySelector('#setTitle').textContent = t[2];
+        m.querySelector('#setSub').textContent = t[3];
+        head.classList.remove('swap');
+        if (!instant) { void head.offsetWidth; head.classList.add('swap'); }
+      };
+      panes.style.setProperty('--dir', to >= from ? 1 : -1);
+      clearTimeout(tabTimer);
+      if (instant || !cur || cur === next) { swap(); return; }
+      m.querySelectorAll('.spane.leaving').forEach(p => p.classList.remove('leaving'));
+      cur.classList.remove('on');
+      cur.classList.add('leaving');
+      tabTimer = setTimeout(swap, 150);
+    };
+    m.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { if (b.dataset.tab !== settingsTab) showTab(b.dataset.tab); });
+    showTab(settingsTab, true);
+  }, 'set');
 };
 
 $('#btnMulti').onclick = () => {
@@ -1712,7 +2367,7 @@ $('#btnMulti').onclick = () => {
 };
 $('#btnClient').onclick = () => send('launchClient', { ids: orderedSelection() });
 $('#btnKill').onclick = () => {
-  if (!S || !S.alive) { send('killAll'); return; }
+  if (!S || !S.alive || theme.confirmKill === 'off') { send('killAll'); return; }
   confirmModal({ title: 'Close all Roblox clients?', html: `This force-closes <b>${S.alive}</b> running ${S.alive === 1 ? 'client' : 'clients'}. Unsaved progress in game is lost.`, ok: 'Kill all', danger: true, onOk: () => send('killAll') });
 };
 $('#btnLaunch').onclick = () => send('launch', { ids: orderedSelection() });
@@ -1753,9 +2408,6 @@ $('#btnBestServer').onclick = () => {
   renderLaunch();
   send('setBestServer', { value: S.bestServer });
 };
-/* Join Server: accepts a bare server ID (uses the Place ID above), the sniper's
-   "Roblox.GameLauncher.joinGameInstance(place, "id")" script, or a roblox:// /
-   roblox.com link carrying placeId + gameInstanceId/gameId. */
 function parseJoinTarget(text) {
   const t = String(text || '').trim();
   const g = t.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
@@ -1880,6 +2532,7 @@ $('#cbAll').onclick = () => {
   const vis = visibleAccounts();
   const allOn = vis.length && vis.every(x => sel.has(x.a.id));
   vis.forEach(x => allOn ? sel.delete(x.a.id) : sel.add(x.a.id));
+  replay($('#list'), 'cascade', 700);
   updateSelectionUI();
 };
 $('#btnPri').onclick = () => {
@@ -1902,6 +2555,7 @@ $('#groupBar').addEventListener('click', e => {
   groupFilter = g === '*' ? null : g;
   renderGroups();
   renderAccounts();
+  replay($('#list'), 'swap', 700);
 });
 
 document.addEventListener('keydown', e => {
@@ -1927,8 +2581,6 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('contextmenu', e => { if (!/INPUT|TEXTAREA/.test(e.target.tagName)) e.preventDefault(); });
-
-/* ---------- boot ---------- */
 
 let demo = null;
 function demoHandle(msg) {
@@ -1967,6 +2619,7 @@ if (!DEMO) {
     if (!m) return;
     if (m.type === 'state') onState(m);
     else if (m.type === 'log') m.items.forEach(it => toastFromLog(it.text));
+    else if (m.type === 'needChrome') { $('#loginWait').classList.remove('show'); chromeModal(m.what); }
     else if (m.type === 'relaunch') {
       if (m.stage === 'pending') showHandoff('Waiting for administrator approval', 'Accept the Windows prompt to continue.');
       else if (m.stage === 'handoff') showHandoff('Switching to administrator mode', 'Your session carries over, one moment…');
@@ -1977,7 +2630,6 @@ if (!DEMO) {
 }
 send('ready');
 syncFrame();
-// Failsafe: never trap the user behind the loader if state is slow to arrive.
 setTimeout(() => { document.body.classList.add('ready'); hideLoader(); }, 6000);
 </script>
 </body>

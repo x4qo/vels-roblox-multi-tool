@@ -150,12 +150,6 @@ static void ReleaseRobloxCookieFileLock() {
     }
 }
 
-// Multi-instance works by *owning* ROBLOX_singletonMutex so no Roblox client can.
-// Ownership belongs to a thread, and it is lost to Roblox whenever a client owned
-// it first and then dies (e.g. Kill All): the mutex is abandoned and the next client
-// to start grabs it, putting Roblox back into single-instance mode. So a dedicated
-// thread that never exits keeps re-trying to take ownership whenever it's free
-// (including WAIT_ABANDONED), and holds it for the life of the tool.
 static std::atomic<bool> g_ownsRobloxMutex{ false };
 
 static void HoldMultiRobloxMutex() {
@@ -174,7 +168,6 @@ static void HoldMultiRobloxMutex() {
                 g_ownsRobloxMutex = true;
                 Log(warned ? "[v] Took back ROBLOX_singletonMutex - multi-instance launching works again."
                            : "[v] Holding ROBLOX_singletonMutex for multi-instance launching.");
-                // Owned for good; this thread must stay alive or ownership is abandoned.
                 for (;;) Sleep(INFINITE);
             }
             if (!warned) {
@@ -187,8 +180,6 @@ static void HoldMultiRobloxMutex() {
 }
 
 static void ReleaseMultiRobloxMutex() {
-    // Ownership lives on the keeper thread, so just drop our handle; Windows
-    // releases the mutex (as abandoned) when the tool exits.
     if (!g_multiRobloxMutex) return;
     CloseHandle(g_multiRobloxMutex);
     g_multiRobloxMutex = nullptr;
@@ -239,7 +230,13 @@ void Init(const std::wstring& exeDir) {
     StartAutoArrangeWatcher();
     LoadRobloxBuilds();
     LoadCustomFont();
-    { std::error_code ec; std::filesystem::remove(SelfExePath() + L".old", ec); }  // left by the last self-update
+    LoadFpsCaps();
+    LoadFastFlags();
+    LoadServerHistory();
+    LoadPlaytime();
+    LoadDiscordSettings();
+    std::thread(PrepareRobloxInstalls).detach();
+    { std::error_code ec; std::filesystem::remove(SelfExePath() + L".old", ec); }
     std::thread(StartupUpdateCheck).detach();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
@@ -316,69 +313,131 @@ static std::wstring FindHandleExe() {
 
 static std::wstring Widen(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
+static std::mutex g_handleWorkMutex;
+static std::atomic<long long> g_quietUntilMs{ 0 };
 
-static bool CloseRobloxSingletonsOnce(const std::wstring& handleExe, const std::vector<DWORD>& pids) {
+static long long NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+static void EnableDebugPrivilege() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token)) return;
+    TOKEN_PRIVILEGES tp = {};
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+    if (LookupPrivilegeValueW(nullptr, L"SeDebugPrivilege", &tp.Privileges[0].Luid))
+        AdjustTokenPrivileges(token, FALSE, &tp, sizeof(tp), nullptr, nullptr);
+    CloseHandle(token);
+}
+
+int CloseSingletonEventsIn(unsigned long pid) {
+    typedef LONG(NTAPI* NtQueryObjectFn)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+    static NtQueryObjectFn queryObject = (NtQueryObjectFn)(void*)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryObject");
+    if (!queryObject) return -1;
+    EnableDebugPrivilege();
+    HANDLE proc = OpenProcess(PROCESS_DUP_HANDLE | PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+    if (!proc) return -1;
+
+    struct UnicodeString { USHORT Length; USHORT MaximumLength; PWSTR Buffer; };
+    static const wchar_t kName[] = L"ROBLOX_singletonEvent";
+    const size_t nameLen = wcslen(kName);
+    DWORD total = 0;
+    if (!GetProcessHandleCount(proc, &total)) total = 4096;
+    int closed = 0;
+    DWORD seen = 0;
+    std::vector<BYTE> buf(2048);
+    HANDLE self = GetCurrentProcess();
+    for (ULONG_PTR value = 4; value <= 0x40000 && seen < total; value += 4) {
+        if (WaitForSingleObject(proc, 0) != WAIT_TIMEOUT) break;
+        HANDLE dup = nullptr;
+        if (!DuplicateHandle(proc, (HANDLE)value, self, &dup, 0, FALSE, DUPLICATE_SAME_ACCESS)) continue;
+        ++seen;
+        ULONG got = 0;
+        bool isEvent = false;
+        if (queryObject(dup, 2, buf.data(), (ULONG)buf.size(), &got) >= 0) {
+            auto* type = (UnicodeString*)buf.data();
+            isEvent = type->Buffer && type->Length == 5 * sizeof(wchar_t) && wcsncmp(type->Buffer, L"Event", 5) == 0;
+        }
+        bool match = false;
+        if (isEvent && queryObject(dup, 1, buf.data(), (ULONG)buf.size(), &got) >= 0) {
+            auto* name = (UnicodeString*)buf.data();
+            size_t len = name->Length / sizeof(wchar_t);
+            match = name->Buffer && len >= nameLen && wcsncmp(name->Buffer + len - nameLen, kName, nameLen) == 0;
+        }
+        CloseHandle(dup);
+        if (match && DuplicateHandle(proc, (HANDLE)value, nullptr, nullptr, 0, FALSE, DUPLICATE_CLOSE_SOURCE)) ++closed;
+    }
+    CloseHandle(proc);
+    return closed;
+}
+
+static bool ProcessAlive(DWORD pid) {
+    HANDLE h = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    if (!h) return false;
+    bool alive = WaitForSingleObject(h, 0) == WAIT_TIMEOUT;
+    CloseHandle(h);
+    return alive;
+}
+
+static int CloseSingletonsWithHandleExe(const std::wstring& handleExe, DWORD pid) {
     static const std::regex kSingletonRe(
         R"(([0-9A-Fa-f]+):\s+Event\b.*ROBLOX_singletonEvent)",
         std::regex::icase);
+    if (handleExe.empty() || !ProcessAlive(pid)) return 0;
+    static bool accepted = false;
+    if (!accepted) { accepted = true; RunCaptureOutput(handleExe, L"-accepteula"); }
+    int closed = 0;
+    std::string raw = RunCaptureOutput(handleExe, L"-p " + std::to_wstring(pid) + L" -a -nobanner");
+    std::istringstream stream(raw);
+    std::string line;
+    while (std::getline(stream, line)) {
+        if (line.find("ROBLOX_singletonEvent") == std::string::npos) continue;
+        std::smatch m;
+        if (!std::regex_search(line, m, kSingletonRe) || !ProcessAlive(pid)) continue;
+        std::string closeOut = RunCaptureOutput(handleExe, L"-c " + Widen(m[1].str()) + L" -p " + std::to_wstring(pid) + L" -y -nobanner");
+        std::string lowered = closeOut;
+        for (char& c : lowered) c = (char)tolower((unsigned char)c);
+        if (lowered.find("error") == std::string::npos && lowered.find("access is denied") == std::string::npos &&
+            lowered.find("could not") == std::string::npos) ++closed;
+    }
+    return closed;
+}
 
+static int CloseRobloxSingletonsOnce(const std::wstring& handleExe, const std::vector<DWORD>& pids) {
+    std::lock_guard<std::mutex> work(g_handleWorkMutex);
+    if (NowMs() < g_quietUntilMs.load()) return 0;
+    int closed = 0;
     for (DWORD pid : pids) {
-        std::wstring args = L"-p " + std::to_wstring(pid) + L" -a -nobanner";
-        std::string raw = RunCaptureOutput(handleExe, args);
-
-        std::istringstream stream(raw);
-        std::string line;
-        while (std::getline(stream, line)) {
-            if (line.find("ROBLOX_singletonEvent") == std::string::npos) continue;
-            std::smatch m;
-            if (!std::regex_search(line, m, kSingletonRe)) continue;
-            std::string handleId = m[1].str();
-
-            Log("[!] Singleton event found (handle " + handleId + ", pid " + std::to_string(pid) + ") - closing it...");
-            std::wstring closeArgs = L"-c " + Widen(handleId) + L" -p " + std::to_wstring(pid) + L" -y -nobanner";
-            std::string closeOut = RunCaptureOutput(handleExe, closeArgs);
-            std::string lowered = closeOut;
-            for (char& c : lowered) c = (char)tolower((unsigned char)c);
-            if (lowered.find("error") != std::string::npos ||
-                lowered.find("access is denied") != std::string::npos ||
-                lowered.find("could not") != std::string::npos) {
-                Log("[!] Failed to close the singleton - try running Vels Multi Tool as Administrator.");
-            } else {
-                Log("[v] Done - you can open another instance now");
-            }
+        int n = CloseSingletonEventsIn(pid);
+        if (n < 0) n = CloseSingletonsWithHandleExe(handleExe, pid);
+        if (n > 0) {
+            closed += n;
+            Log("[v] Singleton lock released for process " + std::to_string(pid) + " - another instance can open now.");
         }
     }
-    return true;
+    return closed;
 }
 
 void CloseRobloxSingletonsNow() {
-    std::wstring handleExe = FindHandleExe();
-    if (handleExe.empty()) {
-        Log("[!] handle64.exe not found next to the exe. Place it in the same folder.");
-        return;
-    }
-    RunCaptureOutput(handleExe, L"-accepteula");
     auto pids = FindPidsByName(L"RobloxPlayerBeta.exe");
     if (pids.empty()) {
         Log("[i] No Roblox instances running - nothing to unlock.");
         return;
     }
     Log("[i] Closing Roblox singleton lock(s) so another instance can launch...");
-    CloseRobloxSingletonsOnce(handleExe, pids);
+    CloseRobloxSingletonsOnce(FindHandleExe(), pids);
 }
 
 static void WatcherLoop() {
     std::wstring handleExe = FindHandleExe();
-    if (handleExe.empty()) {
-        Log("[!] handle64.exe not found next to the exe. Place it in the same folder.");
-        watching = false;
-        return;
-    }
-
-    RunCaptureOutput(handleExe, L"-accepteula");
     Log("[i] Watching for RobloxPlayerBeta.exe ...");
     int lastCount = -1;
     std::set<DWORD> lastPids;
+    std::map<DWORD, int> pending;
 
     while (watching) {
         auto pids = FindPidsByName(L"RobloxPlayerBeta.exe");
@@ -391,13 +450,15 @@ static void WatcherLoop() {
         }
 
         std::set<DWORD> current(pids.begin(), pids.end());
-        bool newProcess = false;
-        for (DWORD pid : current) {
-            if (lastPids.find(pid) == lastPids.end()) { newProcess = true; break; }
+        for (DWORD pid : current)
+            if (lastPids.find(pid) == lastPids.end()) pending[pid] = 20;
+        for (auto it = pending.begin(); it != pending.end();) {
+            if (!current.count(it->first)) { it = pending.erase(it); continue; }
+            int closed = CloseRobloxSingletonsOnce(handleExe, { it->first });
+            if (closed > 0 || --it->second <= 0) it = pending.erase(it);
+            else ++it;
         }
         lastPids.swap(current);
-
-        if (newProcess) CloseRobloxSingletonsOnce(handleExe, pids);
 
         for (int i = 0; i < 20 && watching; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -418,13 +479,15 @@ void StopWatching() {
 
 void LaunchNewInstance() {
     Log("[i] Launching a new Roblox instance...");
-    EnsureCustomFont();
+    PrepareRobloxInstalls();
     HINSTANCE r = ShellExecuteW(nullptr, L"open", L"roblox-player:", nullptr, nullptr, SW_SHOWNORMAL);
     if ((INT_PTR)r <= 32) Log("[!] Could not launch via roblox-player: protocol. Is Roblox installed?");
     else Log("[v] Launch requested. If the singleton lock blocks it, the watcher will clear it automatically.");
 }
 
 void KillAllRobloxInstances() {
+    std::lock_guard<std::mutex> work(g_handleWorkMutex);
+    g_quietUntilMs = NowMs() + 4000;
     auto pids = FindPidsByName(L"RobloxPlayerBeta.exe");
     if (pids.empty()) {
         Log("[i] No Roblox instances running.");
@@ -439,13 +502,12 @@ void KillAllRobloxInstances() {
             else CloseHandle(h);
         }
     }
-    // Termination is asynchronous: wait (briefly) until they're really gone so an
-    // immediate relaunch doesn't race a half-dead client.
     for (size_t i = 0; i < dying.size(); i += MAXIMUM_WAIT_OBJECTS) {
         DWORD n = (DWORD)std::min<size_t>(MAXIMUM_WAIT_OBJECTS, dying.size() - i);
-        WaitForMultipleObjects(n, dying.data() + i, TRUE, 4000);
+        WaitForMultipleObjects(n, dying.data() + i, TRUE, 6000);
     }
     for (HANDLE h : dying) CloseHandle(h);
+    g_quietUntilMs = NowMs() + 2500;
     Log("[v] Closed " + std::to_string(closed) + " of " + std::to_string(pids.size()) + " Roblox instance(s).");
     if (!g_ownsRobloxMutex.load())
         Log("[i] Waiting to take back ROBLOX_singletonMutex so new launches can run side by side...");
@@ -859,9 +921,6 @@ bool RobloxCookieFileHasData() {
     return std::filesystem::exists(path, ec) && !ec && std::filesystem::file_size(path, ec) > 0 && !ec;
 }
 
-// Bloxstrap and Fishstrap keep their own Roblox installs, each with its own
-// RobloxCookies.dat next to the stock client's. Only these Roblox cookie files
-// are wiped - browser cookies are left alone.
 static void ClearBootstrapperCookieFiles() {
     const char* localAppData = std::getenv("LOCALAPPDATA");
     if (!localAppData) return;
@@ -1140,13 +1199,8 @@ std::vector<RobloxAccount> accounts;
 std::mutex launchedMutex;
 std::map<long long, unsigned long> launchedPids;
 
-// userId -> browserTrackerId of that account's most recent launch. The tracker id
-// ends up on the RobloxPlayerBeta command line (-b, and inside the -j placelauncher
-// url), so it identifies the account's process no matter how or when it started.
 static std::map<long long, std::string> launchedTrackers;
 
-// Reads another process's command line. Needs only PROCESS_QUERY_LIMITED_INFORMATION,
-// so it works without holding any handle from launch time.
 static std::wstring GetProcessCommandLine(DWORD pid) {
     using NtQIP = LONG(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
     static NtQIP query = (NtQIP)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
@@ -1169,11 +1223,8 @@ static std::wstring GetProcessCommandLine(DWORD pid) {
     return out;
 }
 
-// userId -> when that account was last launched (for the last-resort match below).
 static std::map<long long, std::chrono::steady_clock::time_point> launchedAt;
 
-// RobloxPlayerBeta pid -> its parent pid. Windows keeps the parent id after the
-// parent exits, which is how a relaunched client is traced back to its account.
 static std::map<DWORD, DWORD> RobloxParents() {
     std::map<DWORD, DWORD> out;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -1194,7 +1245,6 @@ void PruneLaunchedPids() {
     for (auto& kv : parents) alive.push_back(kv.first);
     std::set<DWORD> aliveSet(alive.begin(), alive.end());
 
-    // Command lines never change, so read each process's once.
     static std::map<DWORD, std::wstring> cmdCache;
     for (auto it = cmdCache.begin(); it != cmdCache.end();) {
         if (!aliveSet.count(it->first)) it = cmdCache.erase(it);
@@ -1205,9 +1255,6 @@ void PruneLaunchedPids() {
     std::set<DWORD> claimed;
     for (auto& kv : launchedPids) if (aliveSet.count((DWORD)kv.second)) claimed.insert((DWORD)kv.second);
 
-    // Roblox often starts a short-lived client that spawns the real game process and
-    // exits a few seconds later. Follow a dead pid to the live process it spawned
-    // (child or grandchild) instead of dropping the account's pid.
     for (auto it = launchedPids.begin(); it != launchedPids.end();) {
         DWORD pid = (DWORD)it->second;
         if (aliveSet.count(pid)) { ++it; continue; }
@@ -1226,7 +1273,6 @@ void PruneLaunchedPids() {
         else it = launchedPids.erase(it);
     }
 
-    // Fill in any launched account that has no live pid by matching its tracker id.
     std::set<DWORD> taken;
     for (auto& kv : launchedPids) taken.insert((DWORD)kv.second);
     for (auto& kv : launchedTrackers) {
@@ -1237,7 +1283,7 @@ void PruneLaunchedPids() {
             auto c = cmdCache.find(pid);
             if (c == cmdCache.end()) {
                 std::wstring cmd = GetProcessCommandLine(pid);
-                if (cmd.empty()) continue;  // still starting or unreadable; retry next pass
+                if (cmd.empty()) continue;
                 c = cmdCache.emplace(pid, std::move(cmd)).first;
             }
             if (c->second.find(tracker) != std::wstring::npos) {
@@ -1248,9 +1294,6 @@ void PruneLaunchedPids() {
         }
     }
 
-    // Last resort (the game client's command line is usually unreadable): if exactly
-    // one recently launched account is missing a pid and exactly one Roblox game
-    // process is unclaimed, they belong together. Never guess when it's ambiguous.
     auto now = std::chrono::steady_clock::now();
     std::vector<long long> missing;
     for (auto& kv : launchedAt)
@@ -1264,7 +1307,6 @@ void PruneLaunchedPids() {
                 std::wstring cmd = GetProcessCommandLine(pid);
                 if (!cmd.empty()) c = cmdCache.emplace(pid, std::move(cmd)).first;
             }
-            // The Roblox app's background tray process isn't a game client.
             if (c != cmdCache.end() && c->second.find(L"--launch-to-tray") != std::wstring::npos) continue;
             spare.push_back(pid);
         }
@@ -1272,9 +1314,6 @@ void PruneLaunchedPids() {
     }
 }
 
-// After launching an account, the new RobloxPlayerBeta process is whichever PID
-// wasn't present just before. Runs briefly in the background so it doesn't hold
-// up the launch loop.
 static void AssignLaunchedPid(long long userId, std::set<DWORD> before) {
     std::wstring tracker;
     {
@@ -1292,7 +1331,6 @@ static void AssignLaunchedPid(long long userId, std::set<DWORD> before) {
         }
         for (DWORD p : now) {
             if (before.count(p) || owned.count(p)) continue;
-            // A readable command line that lacks our tracker is another account's launch.
             std::wstring cmd = tracker.empty() ? L"" : GetProcessCommandLine(p);
             if (!cmd.empty() && cmd.find(tracker) == std::wstring::npos) continue;
             found = p;
@@ -1514,7 +1552,7 @@ static bool RefreshStoredAccountCookie(int index, RobloxAccount& account) {
 }
 
 static std::wstring FindRobloxPlayerExe() {
-    EnsureCustomFont();  // every direct launch resolves the exe here first
+    PrepareRobloxInstalls();
     {
         std::lock_guard<std::mutex> lock(robloxBuildMutex);
         if (!robloxBuild.activeVersion.empty()) {
@@ -1826,8 +1864,6 @@ void SetAccountGroup(int index, const std::string& group) {
                       : "[v] Added " + accountName + " to \"" + group + "\".");
 }
 
-// Priority accounts always form a block at the top of the list. A drop takes
-// the priority of the block it lands inside, so reordering never breaks that.
 void MoveAccount(int from, int to) {
     {
         std::lock_guard<std::mutex> lock(accountsMutex);
@@ -1876,6 +1912,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
     }
 
     ScrubAndLockRobloxCookieFile(("before launch for " + account.username).c_str(), false);
+    ApplyFpsCapFor(account.userId);
 
     std::string ticket = GetAuthTicket(account.cookie);
     if (ticket.empty()) {
@@ -1896,7 +1933,6 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
             "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) +
             "&linkCode=" + UrlEncode(linkCode) + "&accessCode=&isPlayTogetherGame=false";
     } else if (!gameId.empty()) {
-        // Join one specific server instance (best-ping pick or rejoin).
         placeLauncherUrl = "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGameJob"
             "&browserTrackerId=" + browserTrackerId + "&placeId=" + std::to_string(placeId) +
             "&gameId=" + UrlEncode(gameId) + "&isPlayTogetherGame=false";
@@ -1917,7 +1953,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         std::lock_guard<std::mutex> lk(launchedMutex);
         launchedTrackers[account.userId] = browserTrackerId;
         launchedAt[account.userId] = std::chrono::steady_clock::now();
-        launchedPids.erase(account.userId);  // the old pid belongs to the previous launch
+        launchedPids.erase(account.userId);
     }
 
     bool pinnedBuild;
@@ -1929,6 +1965,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
         }
         std::thread(AssignLaunchedPid, account.userId, pidsBefore).detach();
         if (!gameId.empty()) SaveLastServer(placeId, gameId);
+        OnAccountLaunched(account.userId, placeId, gameId, linkCode);
         Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
             (linkCode.empty() ? (gameId.empty() ? "." : " (chosen server).") : " (private server)."));
         AddActivity(linkCode.empty() ? "Launched Roblox" : "Launched into private server", account.username);
@@ -1937,7 +1974,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
     }
 
     int beforeCount = (int)pidsBefore.size();
-    EnsureCustomFont();
+    PrepareRobloxInstalls();
     std::wstring wuri(uri.begin(), uri.end());
     HINSTANCE r = ShellExecuteW(nullptr, L"open", wuri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     bool launched = (INT_PTR)r > 32 && WaitForRobloxProcessCountAbove(beforeCount, 5000);
@@ -1948,6 +1985,7 @@ static void LaunchAccountInternal(int index, long long placeId, const std::strin
 
     std::thread(AssignLaunchedPid, account.userId, pidsBefore).detach();
     if (!gameId.empty()) SaveLastServer(placeId, gameId);
+    OnAccountLaunched(account.userId, placeId, gameId, linkCode);
     Log("[v] Launched " + account.username + " into " + std::to_string(placeId) +
         (linkCode.empty() ? (gameId.empty() ? "." : " (chosen server).") : " (private server)."));
     AddActivity(linkCode.empty() ? "Launched Roblox" : "Launched into private server", account.username);
@@ -2005,9 +2043,6 @@ static bool LaunchRobloxClientDirect(const std::string& ticket) {
     return true;
 }
 
-// Opens the Roblox app on the home screen, signed in as this account. Because
-// the tool keeps RobloxCookies.dat locked, the client can only authenticate
-// from an auth ticket, so a plain launch would land on the login screen.
 void LaunchAccountClient(int index) {
     RobloxAccount account;
     {
@@ -2017,6 +2052,7 @@ void LaunchAccountClient(int index) {
     }
 
     ScrubAndLockRobloxCookieFile(("before client launch for " + account.username).c_str(), false);
+    ApplyFpsCapFor(account.userId);
 
     std::string ticket = GetAuthTicket(account.cookie);
     if (ticket.empty()) {
@@ -2044,7 +2080,7 @@ void LaunchAccountClient(int index) {
         launched = LaunchRobloxClientDirect(ticket);
     } else {
         int beforeCount = (int)FindPidsByName(L"RobloxPlayerBeta.exe").size();
-        EnsureCustomFont();
+        PrepareRobloxInstalls();
         std::wstring wuri(uri.begin(), uri.end());
         HINSTANCE r = ShellExecuteW(nullptr, L"open", wuri.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         launched = (INT_PTR)r > 32 && WaitForRobloxProcessCountAbove(beforeCount, 5000);
@@ -2088,7 +2124,6 @@ std::string FindBestServer(long long placeId) {
         long long playing = s["playing"].i64(), maxPlayers = s["maxPlayers"].i64();
         if (maxPlayers > 0 && playing >= maxPlayers) continue;
         double ping = s["ping"].type == json::Value::Number ? s["ping"].n : 1e17;
-        // Lowest ping wins; break ties toward the fuller server (faster to fill/keep alive).
         if (ping < bestPing || (ping == bestPing && playing > bestPlaying)) {
             bestPing = ping;
             bestPlaying = playing;
@@ -2298,6 +2333,40 @@ void FetchAccountAvatar(int index) {
     accounts[index].avatarLoaded = true;
 }
 
+bool LookupGame(long long placeId, GameLookup& out) {
+    if (placeId <= 0) return false;
+    HttpResponse uni = HttpRequest(L"apis.roblox.com",
+        L"/universes/v1/places/" + std::to_wstring(placeId) + L"/universe", L"GET", "", {}, "");
+    if (!uni.ok || uni.status != 200) return false;
+    out.universeId = ExtractJsonLongField(uni.body, "universeId");
+    if (out.universeId <= 0) return false;
+    std::wstring uid = std::to_wstring(out.universeId);
+    HttpResponse games = HttpRequest(L"games.roblox.com", L"/v1/games?universeIds=" + uid, L"GET", "", {}, "");
+    if (games.ok && games.status == 200) {
+        out.rootPlaceId = ExtractJsonLongField(games.body, "rootPlaceId");
+        out.name = ExtractJsonStringField(games.body, "name");
+    }
+    HttpResponse icon = HttpRequest(L"thumbnails.roblox.com",
+        L"/v1/games/icons?universeIds=" + uid + L"&size=512x512&format=Png&isCircular=false", L"GET", "", {}, "");
+    if (icon.ok && icon.status == 200) out.iconUrl = ExtractJsonStringField(icon.body, "imageUrl");
+    return !out.name.empty();
+}
+
+bool QueryPresence(long long userId, const std::string& cookie, long long& placeId, long long& rootPlaceId, std::string& gameId) {
+    const std::string body = "{\"userIds\":[" + std::to_string(userId) + "]}";
+    std::wstring csrf;
+    HttpResponse r = HttpRequest(L"presence.roblox.com", L"/v1/presence/users", L"POST", cookie,
+        { { L"Content-Type", L"application/json" } }, body, &csrf);
+    if (r.status == 403 && !csrf.empty())
+        r = HttpRequest(L"presence.roblox.com", L"/v1/presence/users", L"POST", cookie,
+            { { L"Content-Type", L"application/json" }, { L"X-CSRF-TOKEN", csrf } }, body);
+    if (!r.ok || r.status != 200) return false;
+    placeId = ExtractJsonLongField(r.body, "placeId");
+    rootPlaceId = ExtractJsonLongField(r.body, "rootPlaceId");
+    gameId = ExtractJsonStringField(r.body, "gameId");
+    return true;
+}
+
 void FetchPlaceInfo(long long placeId, const std::string& cookie) {
     if (placeId <= 0) return;
 
@@ -2313,7 +2382,6 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
         universeId = ExtractJsonLongField(detailsResp.body, "universeId");
     }
 
-    // Place details need a cookie; the universe lookup works without one.
     if (universeId <= 0) {
         HttpResponse uniResp = HttpRequest(L"apis.roblox.com",
             L"/universes/v1/places/" + std::to_wstring(placeId) + L"/universe", L"GET", "", {}, "");
@@ -2337,7 +2405,6 @@ void FetchPlaceInfo(long long placeId, const std::string& cookie) {
         HttpResponse favResp = HttpRequest(L"games.roblox.com", L"/v1/games/" + uid + L"/favorites/count", L"GET", "", {}, "");
         if (favResp.ok && favResp.status == 200) favorites = ExtractJsonLongField(favResp.body, "favoritesCount");
 
-        // Sub-places don't have an icon of their own, so show the parent game's.
         HttpResponse gameIconResp = HttpRequest(L"thumbnails.roblox.com",
             L"/v1/games/icons?universeIds=" + uid + L"&size=512x512&format=Png&isCircular=false", L"GET", "", {}, "");
         if (gameIconResp.ok && gameIconResp.status == 200) {
@@ -3076,11 +3143,9 @@ void RefreshSystemStatus(int selectedAccountIndex) {
     systemStatus = s;
 }
 
-/* ---------- self-update ---------- */
-
 std::mutex updateMutex;
 UpdateState updateState;
-static std::string g_updateSha;  // blob hash of the exe on GitHub, from the last check
+static std::string g_updateSha;
 
 static const wchar_t* kUpdateRepoPath = L"/repos/x4qo/vels-roblox-multi-tool/contents?ref=main";
 static const wchar_t* kUpdateCommitsPath = L"/repos/x4qo/vels-roblox-multi-tool/commits?path=VelsMultiTool.exe&per_page=1";
@@ -3093,8 +3158,6 @@ static void SetUpdateState(const std::string& status, const std::string& message
     updateState.progress = progress;
 }
 
-// The hash git stores a file under: SHA-1 of "blob <size>\0" followed by the contents.
-// GitHub reports it for every file, so no version number has to be kept in sync.
 static std::string GitBlobSha(const std::wstring& file) {
     std::error_code ec;
     auto size = std::filesystem::file_size(file, ec);
@@ -3126,7 +3189,6 @@ static std::string GitBlobSha(const std::wstring& file) {
     return out;
 }
 
-// When this exe was linked (the timestamp in its PE header), as unix seconds; 0 if unreadable.
 static long long ExeBuildTime(const std::wstring& file) {
     FILE* f = _wfopen(file.c_str(), L"rb");
     if (!f) return 0;
@@ -3137,7 +3199,6 @@ static long long ExeBuildTime(const std::wstring& file) {
     return ok ? (long long)stamp : 0;
 }
 
-// When the exe on GitHub was last committed, as unix seconds; 0 if unknown.
 static long long RemoteExeCommitTime() {
     HttpResponse r = HttpRequest(L"api.github.com", kUpdateCommitsPath, L"GET", "",
         { { L"Accept", L"application/vnd.github+json" } }, "");
@@ -3174,17 +3235,12 @@ void CheckForUpdate() {
     if (local.empty()) { SetUpdateState("error", "Could not read this exe to compare it."); return; }
     { std::lock_guard<std::mutex> lock(updateMutex); g_updateSha = remote; }
     if (remote == local) { SetUpdateState("current", "You're on the latest build (" + local.substr(0, 7) + ")."); return; }
-    // A different exe is only an update if it is newer: a build made after the GitHub
-    // one was committed (a local build not published yet) must never be "updated" back.
     long long built = ExeBuildTime(SelfExePath()), published = RemoteExeCommitTime();
     if (built > 0 && published > 0 && built > published)
         SetUpdateState("current", "This build is newer than the one on GitHub (" + remote.substr(0, 7) + ").");
     else SetUpdateState("available", "A different build is on GitHub (" + remote.substr(0, 7) + "). You have " + local.substr(0, 7) + ".");
 }
 
-// Downloads the GitHub exe, checks it is exactly the build the check saw, then swaps it
-// in for the running one (kept as .old until the next start). Returns true when a
-// restart will load the new build.
 bool InstallUpdate() {
     std::string expected;
     {
@@ -3206,14 +3262,13 @@ bool InstallUpdate() {
         SetUpdateState("error", "The download did not match the build on GitHub, so it was discarded. Check again.");
         return false;
     }
-    // A running exe can be renamed but not overwritten.
     if (!MoveFileExW(self.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         std::filesystem::remove(fresh, ec);
         SetUpdateState("error", "Could not replace the exe (is its folder write-protected?).");
         return false;
     }
     if (!MoveFileExW(fresh.c_str(), self.c_str(), 0)) {
-        MoveFileExW(old.c_str(), self.c_str(), 0);  // put the running build back
+        MoveFileExW(old.c_str(), self.c_str(), 0);
         std::filesystem::remove(fresh, ec);
         SetUpdateState("error", "Could not put the new exe in place. Nothing was changed.");
         return false;
@@ -3235,8 +3290,6 @@ void SetUpdateSettings(bool notify, bool autoUpdate) {
     if (f) f << (notify ? 1 : 0) << ' ' << (autoUpdate ? 1 : 0);
 }
 
-// Runs once at startup: looks for an update and, unless the user turned that off,
-// flags it for the UI to offer (or to install on its own when auto-update is on).
 void StartupUpdateCheck() {
     {
         std::ifstream f(UpdateSettingsFilePath().c_str());
@@ -3247,7 +3300,216 @@ void StartupUpdateCheck() {
     CheckForUpdate();
     std::lock_guard<std::mutex> lock(updateMutex);
     if (updateState.status == "available") updateState.prompt = true;
-    else if (updateState.status == "error") updateState = {};  // a failed background check stays silent
+    else if (updateState.status == "error") updateState = {};
+}
+
+std::mutex serversMutex;
+ServerBrowserState serverBrowser;
+static std::atomic<int> g_serversGen{ 0 };
+
+static HttpResponse PostJsonAs(const std::wstring& host, const std::wstring& path, const std::string& cookie,
+                               const std::string& body, std::vector<std::pair<std::wstring, std::wstring>> headers = {}) {
+    headers.push_back({ L"Content-Type", L"application/json" });
+    std::wstring csrf;
+    HttpResponse r = HttpRequest(host, path, L"POST", cookie, headers, body, &csrf);
+    if (r.status == 403 && !csrf.empty()) {
+        headers.push_back({ L"X-CSRF-TOKEN", csrf });
+        r = HttpRequest(host, path, L"POST", cookie, headers, body);
+    }
+    return r;
+}
+
+static std::map<long long, std::string> DataCenterNames() {
+    static std::mutex m;
+    static std::map<long long, std::string> names;
+    std::lock_guard<std::mutex> lock(m);
+    if (!names.empty()) return names;
+    HttpResponse r = HttpRequest(L"apis.rovalra.com", L"/v1/datacenters/list", L"GET", "", {}, "");
+    json::Value root;
+    if (!r.ok || r.status != 200 || !json::Parse(r.body, root)) return names;
+    for (const auto& loc : root.a) {
+        std::string city = loc["location"]["city"].str(), cc = loc["location"]["country"].str();
+        if (city.empty() && cc.empty()) continue;
+        std::string label = city.empty() ? cc : city + (cc.empty() ? "" : ", " + cc);
+        for (const auto& id : loc["dataCenterIds"].a) names[id.i64()] = label;
+    }
+    return names;
+}
+
+static std::string GeoLocateIp(const std::string& ip) {
+    if (ip.empty()) return "";
+    HttpResponse r = HttpRequest(L"ipinfo.io", L"/" + Widen(ip) + L"/json", L"GET", "", {}, "");
+    json::Value v;
+    if (!r.ok || r.status != 200 || !json::Parse(r.body, v)) return "";
+    std::string city = v["city"].str(), cc = v["country"].str();
+    return city.empty() ? cc : city + (cc.empty() ? "" : ", " + cc);
+}
+
+static std::string ServerRegion(long long placeId, const std::string& gameId, const std::string& cookie) {
+    std::string body = "{\"placeId\":" + std::to_string(placeId) + ",\"gameId\":\"" + gameId +
+                       "\",\"isTeleport\":false,\"gameJoinAttemptId\":\"" + gameId + "\"}";
+    HttpResponse r = PostJsonAs(L"gamejoin.roblox.com", L"/v1/join-game-instance", cookie, body,
+        { { L"User-Agent", L"Roblox/WinInet" }, { L"Referer", L"https://www.roblox.com/" } });
+    json::Value v;
+    if (!r.ok || r.status != 200 || !json::Parse(r.body, v)) return "";
+    const json::Value& js = v["joinScript"];
+    long long dc = js["DataCenterId"].i64();
+    auto names = DataCenterNames();
+    auto it = names.find(dc);
+    if (dc > 0 && it != names.end()) return it->second;
+    std::string ip = js["UdpJoinEndpoints"].a.empty() ? js["MachineAddress"].str() : js["UdpJoinEndpoints"].a[0]["Address"].str();
+    return GeoLocateIp(ip);
+}
+
+void LoadServerBrowser(long long placeId, bool smallestFirst, long long regionUserId) {
+    int gen = ++g_serversGen;
+    {
+        std::lock_guard<std::mutex> lock(serversMutex);
+        serverBrowser = {};
+        serverBrowser.placeId = placeId;
+        serverBrowser.smallestFirst = smallestFirst;
+        serverBrowser.loading = true;
+    }
+    if (placeId <= 0) {
+        std::lock_guard<std::mutex> lock(serversMutex);
+        serverBrowser.loading = false;
+        serverBrowser.error = "Set a Place ID first.";
+        return;
+    }
+    std::vector<ServerRow> rows;
+    std::string cursor, error;
+    for (int page = 0; page < 2; ++page) {
+        std::wstring path = L"/v1/games/" + std::to_wstring(placeId) + L"/servers/Public?sortOrder=" +
+            (smallestFirst ? L"Asc" : L"Desc") + L"&limit=100&excludeFullGames=false" +
+            (cursor.empty() ? L"" : L"&cursor=" + Widen(UrlEncode(cursor)));
+        HttpResponse r = HttpRequest(L"games.roblox.com", path, L"GET", "", {}, "");
+        json::Value root;
+        if (!r.ok || r.status != 200 || !json::Parse(r.body, root)) {
+            if (rows.empty()) error = r.status == 429 ? "Roblox is rate-limiting the server list. Try again in a moment."
+                                                      : "Could not load the server list (status " + std::to_string(r.status) + ").";
+            break;
+        }
+        for (const auto& sv : root["data"].a) {
+            ServerRow row;
+            row.id = sv["id"].str();
+            row.playing = (int)sv["playing"].i64();
+            row.maxPlayers = (int)sv["maxPlayers"].i64();
+            row.ping = (int)sv["ping"].i64();
+            row.fps = (int)(sv["fps"].n + 0.5);
+            if (!row.id.empty()) rows.push_back(row);
+        }
+        cursor = root["nextPageCursor"].str();
+        if (cursor.empty()) break;
+    }
+    if (gen != g_serversGen) return;
+    {
+        std::lock_guard<std::mutex> lock(serversMutex);
+        serverBrowser.rows = rows;
+        serverBrowser.loading = false;
+        serverBrowser.error = error.empty() && rows.empty() ? "No public servers are running for this place." : error;
+    }
+
+    std::string cookie;
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        for (auto& a : accounts) if (a.userId == regionUserId) cookie = a.cookie;
+        if (cookie.empty() && !accounts.empty()) cookie = accounts[0].cookie;
+    }
+    if (cookie.empty()) return;
+    for (size_t i = 0; i < rows.size() && i < 60; ++i) {
+        if (gen != g_serversGen) return;
+        std::string region = ServerRegion(placeId, rows[i].id, cookie);
+        if (gen != g_serversGen) return;
+        {
+            std::lock_guard<std::mutex> lock(serversMutex);
+            if (i < serverBrowser.rows.size() && serverBrowser.rows[i].id == rows[i].id) {
+                serverBrowser.rows[i].region = region;
+                serverBrowser.rows[i].regionTried = true;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(220));
+    }
+}
+
+std::mutex friendsMutex;
+FriendsState friendsState;
+
+void LoadFriends(long long userId) {
+    std::string cookie;
+    {
+        std::lock_guard<std::mutex> lock(accountsMutex);
+        for (auto& a : accounts) if (a.userId == userId) cookie = a.cookie;
+    }
+    {
+        std::lock_guard<std::mutex> lock(friendsMutex);
+        friendsState = {};
+        friendsState.userId = userId;
+        friendsState.loading = true;
+    }
+    auto finish = [&](const std::string& error, std::vector<FriendRow> rows, int total, int online) {
+        std::lock_guard<std::mutex> lock(friendsMutex);
+        if (friendsState.userId != userId) return;
+        friendsState.loading = false;
+        friendsState.error = error;
+        friendsState.rows = std::move(rows);
+        friendsState.total = total;
+        friendsState.online = online;
+    };
+    if (cookie.empty()) { finish("Pick an account first.", {}, 0, 0); return; }
+
+    HttpResponse fr = HttpRequest(L"friends.roblox.com", L"/v1/users/" + std::to_wstring(userId) + L"/friends", L"GET", cookie, {}, "");
+    json::Value friends;
+    if (!fr.ok || fr.status != 200 || !json::Parse(fr.body, friends)) {
+        finish("Could not load this account's friends (status " + std::to_string(fr.status) + ").", {}, 0, 0);
+        return;
+    }
+    std::vector<long long> ids;
+    for (const auto& f : friends["data"].a) if (f["id"].i64() > 0) ids.push_back(f["id"].i64());
+
+    std::vector<FriendRow> rows;
+    int online = 0;
+    for (size_t at = 0; at < ids.size(); at += 50) {
+        std::string body = "{\"userIds\":[";
+        for (size_t i = at; i < ids.size() && i < at + 50; ++i) body += (i > at ? "," : "") + std::to_string(ids[i]);
+        body += "]}";
+        HttpResponse pr = PostJsonAs(L"presence.roblox.com", L"/v1/presence/users", cookie, body);
+        json::Value pres;
+        if (!pr.ok || pr.status != 200 || !json::Parse(pr.body, pres)) continue;
+        for (const auto& p : pres["userPresences"].a) {
+            long long type = p["userPresenceType"].i64();
+            if (type != 0) ++online;
+            if (type != 2) continue;
+            FriendRow row;
+            row.id = p["userId"].i64();
+            row.game = p["lastLocation"].str();
+            row.gameId = p["gameId"].str();
+            row.placeId = p["placeId"].i64();
+            row.rootPlaceId = p["rootPlaceId"].i64();
+            rows.push_back(row);
+        }
+    }
+    if (!rows.empty()) {
+        std::string idList, body = "{\"userIds\":[";
+        for (size_t i = 0; i < rows.size(); ++i) { idList += (i ? "," : "") + std::to_string(rows[i].id); }
+        body += idList + "],\"excludeBannedUsers\":false}";
+        HttpResponse ur = PostJsonAs(L"users.roblox.com", L"/v1/users", cookie, body);
+        json::Value users;
+        if (ur.ok && ur.status == 200 && json::Parse(ur.body, users))
+            for (const auto& u : users["data"].a)
+                for (auto& row : rows) if (row.id == u["id"].i64()) { row.name = u["name"].str(); row.display = u["displayName"].str(); }
+        HttpResponse tr = HttpRequest(L"thumbnails.roblox.com",
+            L"/v1/users/avatar-headshot?userIds=" + Widen(idList) + L"&size=48x48&format=Png&isCircular=false", L"GET", "", {}, "");
+        json::Value thumbs;
+        if (tr.ok && tr.status == 200 && json::Parse(tr.body, thumbs))
+            for (const auto& t : thumbs["data"].a)
+                for (auto& row : rows) if (row.id == t["targetId"].i64()) row.avatarUrl = t["imageUrl"].str();
+        for (auto& row : rows) if (row.name.empty()) row.name = "User " + std::to_string(row.id);
+        std::sort(rows.begin(), rows.end(), [](const FriendRow& a, const FriendRow& b) {
+            if (a.gameId.empty() != b.gameId.empty()) return !a.gameId.empty();
+            return a.game < b.game;
+        });
+    }
+    finish("", std::move(rows), (int)ids.size(), online);
 }
 
 }

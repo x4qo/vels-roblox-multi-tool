@@ -5,6 +5,8 @@
 
 namespace login {
 
+bool ChromeInstalled();
+
 void ShowRobloxLoginWindow(const std::wstring& exeDir,
     std::function<void(bool success, std::string cookie)> onComplete);
 

@@ -1,5 +1,3 @@
-# Note: VelsMultiTool.exe is committed intentionally so install.ps1 can fetch
-# a prebuilt binary. The build.bat output overwrites it in place.
 *.zip
 *.obj
 *.o
@@ -9,7 +7,6 @@
 *.exp
 *.lib
 
-# Runtime/user data - generated at runtime, never source
 accounts.dat
 accounts.dat.v3.bak
 placeid.dat
@@ -22,6 +19,12 @@ lastserver.dat
 arrange.dat
 font.dat
 update.dat
+fps.dat
+fflags.dat
+history.dat
+playtime.dat
+discord.dat
+/mods/
 customfont.ttf
 *.exe.old
 *.exe.update
@@ -29,14 +32,14 @@ customfont.ttf
 *.preidle.bak
 *.v3.bak
 
-# Roblox clients downloaded by the built-in downgrader
 /Builds/
 /chrome_login_data/
 /webview2_data/
 /webview2_data_admin/
 /web_profiles/
 
-# Editor/OS cruft
 .vs/
 *.user
 Thumbs.db
+/_with_comments_backup/
+*.bak

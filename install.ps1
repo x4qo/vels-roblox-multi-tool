@@ -1,26 +1,14 @@
-# Vels Multi Tool - quick installer
-# Downloads the prebuilt VelsMultiTool.exe and its handle64.exe runtime helper,
-# then launches the tool. No build tools required.
-#
-# One-line install (run in PowerShell):
-#   irm https://raw.githubusercontent.com/x4qo/vels-roblox-multi-tool/main/install.ps1 | iex
-
 $ErrorActionPreference = 'Stop'
 
 $repo    = 'x4qo/vels-roblox-multi-tool'
 $branch  = 'main'
 $base    = "https://raw.githubusercontent.com/$repo/$branch"
 $dest    = Join-Path (Join-Path $HOME 'Downloads') 'VelsMultiTool'
-# Relative paths under the repo -> placed at the same relative path under $dest.
-# The UI, fonts and WebView2 loader are embedded in the exe.
 $files   = @(
     'VelsMultiTool.exe',
     'handle64.exe'
 )
 
-# "Launch Browser" in the tool drives a real, separate Chrome window via the
-# DevTools Protocol to sign it into an account's cookie - it needs Chrome
-# installed at one of these standard locations (same paths login.cpp checks).
 function Test-ChromeInstalled {
     $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) | Where-Object { $_ }
     foreach ($root in $roots) {

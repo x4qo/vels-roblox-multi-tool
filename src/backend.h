@@ -133,7 +133,6 @@ void RestoreAdapter(int index);
 extern std::mutex accountsMutex;
 extern std::vector<RobloxAccount> accounts;
 
-// userId -> PID of the Roblox client last launched for that account (while alive).
 extern std::mutex launchedMutex;
 extern std::map<long long, unsigned long> launchedPids;
 void PruneLaunchedPids();
@@ -153,9 +152,6 @@ void SetAccountGroup(int index, const std::string& group);
 void LaunchAccountIntoPlace(int index, long long placeId);
 void LaunchAccountIntoServer(int index, long long placeId, const std::string& gameId);
 
-// Picks the lowest-ping non-full public server from Roblox's own server list
-// (games.roblox.com/v1/games/{placeId}/servers/Public) - the same source RoSeal
-// reads. Returns the server (job) GUID, or "" if none/failure.
 std::string FindBestServer(long long placeId);
 
 extern std::atomic<bool> joinBestServer;
@@ -250,8 +246,6 @@ extern std::mutex systemStatusMutex;
 extern SystemStatus systemStatus;
 void RefreshSystemStatus(int selectedAccountIndex);
 
-// Window arrange (arrange.cpp). preset: grid | columns | rows | focus | cascade | mini.
-// monitor: index into MonitorLabels() (0 = main display).
 struct ArrangeSettings { std::string preset = "grid"; int gap = 6; bool autoArrange = false; int monitor = 0; };
 extern std::mutex arrangeMutex;
 extern ArrangeSettings arrangeSettings;
@@ -262,9 +256,6 @@ int CountRobloxWindows();
 int ArrangeRobloxWindows(const std::string& presetOverride);
 void StartAutoArrangeWatcher();
 
-// Custom Roblox font (fonts.cpp): every font family of each Roblox install is pointed
-// at one user-chosen font file. EnsureCustomFont re-applies it to installs that lack
-// it (Roblox updates into a fresh folder), so it is called before each launch.
 struct CustomFontState { bool enabled = false; bool hasFont = false; std::string name; };
 extern std::mutex customFontMutex;
 extern CustomFontState customFont;
@@ -273,18 +264,81 @@ bool SetCustomFontFile(const std::wstring& path);
 void SetCustomFontEnabled(bool on);
 void EnsureCustomFont();
 
-// Self-update: compares this exe with the prebuilt one on GitHub (by git blob hash)
-// and can swap it in. status: idle | checking | current | available | downloading | ready | error.
-// prompt: the startup check found an update and the UI should offer it (or, with
-// updateAuto on, start installing it straight away).
 struct UpdateState { std::string status = "idle"; std::string message; float progress = 0.0f; bool prompt = false; };
 extern std::mutex updateMutex;
 extern UpdateState updateState;
-extern std::atomic<bool> updateNotify;  // offer updates at startup (default on)
-extern std::atomic<bool> updateAuto;    // install them without asking (default off)
+extern std::atomic<bool> updateNotify;
+extern std::atomic<bool> updateAuto;
 void CheckForUpdate();
 bool InstallUpdate();
 void StartupUpdateCheck();
 void SetUpdateSettings(bool notify, bool autoUpdate);
+
+struct GameLookup { long long universeId = 0; long long rootPlaceId = 0; std::string name; std::string iconUrl; };
+bool LookupGame(long long placeId, GameLookup& out);
+bool QueryPresence(long long userId, const std::string& cookie, long long& placeId, long long& rootPlaceId, std::string& gameId);
+
+void PrepareRobloxInstalls();
+void OnAccountLaunched(long long userId, long long placeId, const std::string& gameId, const std::string& linkCode);
+
+extern std::mutex fpsMutex;
+extern std::map<long long, int> fpsCaps;
+void LoadFpsCaps();
+void SetFpsCap(long long userId, int cap);
+void ApplyFpsCapFor(long long userId);
+
+struct ClientMod { std::string id; std::string label; bool active = false; std::string fileName; };
+std::vector<ClientMod> ClientMods();
+bool SetClientModFile(const std::string& id, const std::wstring& path);
+void ClearClientMod(const std::string& id);
+
+extern std::mutex fastFlagsMutex;
+extern std::map<std::string, std::string> fastFlags;
+void LoadFastFlags();
+bool SetFastFlag(const std::string& name, const std::string& value);
+void ResetFastFlags();
+std::string ExportFastFlagsJson();
+int ImportFastFlagsJson(const std::string& text, int& skipped);
+
+struct ServerVisit {
+    long long time = 0; long long placeId = 0; long long rootPlaceId = 0;
+    std::string gameId; long long userId = 0; std::string linkCode; std::string name;
+};
+extern std::mutex historyMutex;
+extern std::vector<ServerVisit> serverHistory;
+void LoadServerHistory();
+void ClearServerHistory();
+void RemoveServerVisit(const std::string& gameId);
+
+struct ServerRow { std::string id; int playing = 0; int maxPlayers = 0; int ping = 0; int fps = 0; std::string region; bool regionTried = false; };
+struct ServerBrowserState { long long placeId = 0; bool loading = false; bool smallestFirst = false; std::string error; std::vector<ServerRow> rows; };
+extern std::mutex serversMutex;
+extern ServerBrowserState serverBrowser;
+void LoadServerBrowser(long long placeId, bool smallestFirst, long long regionUserId);
+
+struct FriendRow { long long id = 0; std::string name; std::string display; std::string game; std::string gameId; std::string avatarUrl; long long placeId = 0; long long rootPlaceId = 0; };
+struct FriendsState { long long userId = 0; bool loading = false; std::string error; int total = 0; int online = 0; std::vector<FriendRow> rows; };
+extern std::mutex friendsMutex;
+extern FriendsState friendsState;
+void LoadFriends(long long userId);
+
+struct PlaytimeGame { long long universeId = 0; long long rootPlaceId = 0; std::string name; std::string iconUrl; };
+struct PlaytimeEntry { long long userId = 0; long long universeId = 0; long long seconds = 0; long long lastPlayed = 0; };
+extern std::mutex playtimeMutex;
+extern std::map<long long, PlaytimeGame> playtimeGames;
+extern std::vector<PlaytimeEntry> playtime;
+extern std::map<long long, long long> playSessions;
+void LoadPlaytime();
+void BeginPlaySession(long long userId, const GameLookup& game);
+void ClearPlaytime();
+
+extern std::atomic<bool> discordEnabled;
+extern std::atomic<bool> discordConnected;
+void LoadDiscordSettings();
+void SetDiscordEnabled(bool on);
+extern std::atomic<int> discordTimeMode;
+extern std::atomic<int> discordTimeOffset;
+void SetDiscordTime(int mode, int offsetSeconds);
+void SetDiscordGame(long long placeId);
 
 }

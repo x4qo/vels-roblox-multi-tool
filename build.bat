@@ -16,7 +16,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem Embeds the icon, ui\index.html, the brand image and WebView2Loader.dll.
 windres src\app.rc -O coff -o src\app_icon.res
 if errorlevel 1 (
     echo Failed to compile resources.
@@ -28,10 +27,10 @@ echo Compiling - this takes 20-60+ seconds with no output, that's normal, g++ do
 
 %GPP% -O2 -std=c++17 -municode -mwindows ^
   -I src -I third_party\webview2 ^
-  src\main.cpp src\backend.cpp src\login.cpp src\arrange.cpp src\fonts.cpp ^
+  src\main.cpp src\backend.cpp src\login.cpp src\arrange.cpp src\fonts.cpp src\extras.cpp src\discord.cpp ^
   src\app_icon.res ^
   -o VelsMultiTool.exe ^
-  -lshell32 -lshlwapi -lcomdlg32 -liphlpapi -luser32 -lgdi32 -lmsimg32 -ldwmapi -lwinhttp -lws2_32 -lcrypt32 -lole32 -loleaut32 -luuid -lwindowscodecs ^
+  -lshell32 -lshlwapi -lcomdlg32 -liphlpapi -luser32 -lgdi32 -lmsimg32 -ldwmapi -luxtheme -lwinhttp -lws2_32 -lcrypt32 -lole32 -loleaut32 -luuid -lwindowscodecs ^
   -static-libgcc -static-libstdc++ -static
 
 if errorlevel 1 (

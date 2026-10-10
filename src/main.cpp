@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <objbase.h>
 #include <dwmapi.h>
+#include <uxtheme.h>
 #include <shellapi.h>
 #include <shlwapi.h>
 #include <commdlg.h>
@@ -29,8 +30,6 @@
 #include "login.h"
 #include "resource.h"
 
-// The UI is a single HTML page served from the exe's resources on this
-// virtual origin. Nothing on it ever reaches the network.
 static const wchar_t* kAppOrigin = L"https://vels.example/";
 static const wchar_t* kWindowTitle = L"Vels Multi Tool";
 static const COLORREF kBgColor = RGB(11, 12, 14);
@@ -40,9 +39,6 @@ static const UINT_PTR kRevealTimer = 4;
 static bool g_webviewShown = false;
 static void RevealWebView();
 
-// Native splash: the brand icon is painted on the window itself from the first
-// frame, so the loading screen shows instantly. The animated HTML loader is
-// revealed on top once WebView2 has composited it, hiding this seamlessly.
 static HBITMAP g_splashBmp = nullptr;
 static int g_splashW = 0, g_splashH = 0;
 
@@ -67,8 +63,6 @@ static std::atomic<bool> g_macBusy{ false };
 static std::atomic<bool> g_cookieBusy{ false };
 static std::atomic<bool> g_multiBusy{ false };
 
-// Elevation hand-off: the non-admin window stays up while the admin copy
-// loads underneath it, then the admin copy closes it.
 static const UINT kMsgElevateResult = WM_APP + 1;
 static const UINT kMsgUpdateReady = WM_APP + 2;
 static const UINT_PTR kHandoffTimer = 2;
@@ -192,6 +186,43 @@ static std::wstring OpenFontFileDialog(HWND owner) {
     return L"";
 }
 
+static std::wstring OpenModFileDialog(HWND owner, bool sound) {
+    wchar_t file[2048] = L"";
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = sound ? L"Ogg sound (*.ogg)\0*.ogg\0All files\0*.*\0" : L"PNG image (*.png)\0*.png\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 2048;
+    ofn.lpstrTitle = sound ? L"Choose a sound" : L"Choose an image";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_EXPLORER;
+    if (GetOpenFileNameW(&ofn)) return std::wstring(file);
+    return L"";
+}
+
+static void ImportFlagsText(const std::string& data) {
+    int skipped = 0, taken = backend::ImportFastFlagsJson(data, skipped);
+    if (taken < 0) backend::Log("[!] That is not a fast flag JSON table.");
+    else backend::Log(std::string(taken ? "[v] " : "[i] ") + "Imported " + std::to_string(taken) + " fast flag" + (taken == 1 ? "" : "s") +
+                      (skipped ? ", skipped " + std::to_string(skipped) + " that Roblox no longer accepts." : "."));
+}
+
+static std::wstring JsonFileDialog(HWND owner, bool save) {
+    wchar_t file[2048] = L"ClientAppSettings.json";
+    if (!save) file[0] = 0;
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = owner;
+    ofn.lpstrFilter = L"JSON (*.json)\0*.json\0All files\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = 2048;
+    ofn.lpstrDefExt = L"json";
+    ofn.lpstrTitle = save ? L"Export fast flags" : L"Import fast flags";
+    ofn.Flags = OFN_HIDEREADONLY | OFN_EXPLORER | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+    if (save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn)) return std::wstring(file);
+    return L"";
+}
+
 static void ImportCookieLines(const std::string& data, const std::string& source) {
     int added = 0, tried = 0;
     size_t start = 0;
@@ -229,8 +260,6 @@ static std::string FirstAccountCookie() {
     return backend::accounts.empty() ? std::string() : backend::accounts[0].cookie;
 }
 
-// Resolves ids from the page to accounts that still exist, in list order,
-// so priority accounts (always at the top) launch first.
 static std::vector<long long> OrderedIds(const json::Value& list) {
     std::vector<std::pair<int, long long>> found;
     {
@@ -267,6 +296,9 @@ static std::string BuildStateJson() {
     std::map<long long, unsigned long> pidMap;
     { std::lock_guard<std::mutex> lock(backend::launchedMutex); pidMap = backend::launchedPids; }
 
+    std::map<long long, int> fpsMap;
+    { std::lock_guard<std::mutex> lock(backend::fpsMutex); fpsMap = backend::fpsCaps; }
+
     o += "{\"type\":\"state\",\"accounts\":[";
     {
         std::lock_guard<std::mutex> lock(backend::accountsMutex);
@@ -286,6 +318,8 @@ static std::string BuildStateJson() {
             o += std::string(",\"priority\":") + B(a.priority);
             o += std::string(",\"avatar\":") + B(a.avatarLoaded && !a.avatarPng.empty());
             o += std::string(",\"hasPassword\":") + B(!a.password.empty());
+            auto fit = fpsMap.find(a.userId);
+            o += ",\"fps\":" + N(fit == fpsMap.end() ? 0 : fit->second);
             o += '}';
         }
     }
@@ -425,6 +459,79 @@ static std::string BuildStateJson() {
              ",\"has\":" + B(backend::customFont.hasFont) + ",\"name\":" + Quote(backend::customFont.name) + "}";
     }
     {
+        o += ",\"mods\":[";
+        auto mods = backend::ClientMods();
+        for (size_t i = 0; i < mods.size(); ++i)
+            o += std::string(i ? "," : "") + "{\"id\":" + Quote(mods[i].id) + ",\"label\":" + Quote(mods[i].label) +
+                 ",\"active\":" + B(mods[i].active) + ",\"file\":" + Quote(mods[i].fileName) + "}";
+        o += "]";
+    }
+    {
+        std::lock_guard<std::mutex> lock(backend::fastFlagsMutex);
+        o += ",\"fflags\":{";
+        bool first = true;
+        for (auto& kv : backend::fastFlags) { o += std::string(first ? "" : ",") + Quote(kv.first) + ":" + Quote(kv.second); first = false; }
+        o += "}";
+    }
+    {
+        std::lock_guard<std::mutex> lock(backend::historyMutex);
+        o += ",\"history\":[";
+        for (size_t i = 0; i < backend::serverHistory.size(); ++i) {
+            const auto& v = backend::serverHistory[i];
+            o += std::string(i ? "," : "") + "{\"time\":" + N(v.time) + ",\"placeId\":" + N(v.placeId) +
+                 ",\"gameId\":" + Quote(v.gameId) + ",\"userId\":" + N(v.userId) +
+                 ",\"private\":" + B(!v.linkCode.empty()) + ",\"name\":" + Quote(v.name) + "}";
+        }
+        o += "]";
+    }
+    {
+        std::lock_guard<std::mutex> lock(backend::serversMutex);
+        const auto& sb = backend::serverBrowser;
+        o += ",\"servers\":{\"placeId\":" + N(sb.placeId) + ",\"loading\":" + B(sb.loading) + ",\"smallest\":" + B(sb.smallestFirst) +
+             ",\"error\":" + Quote(sb.error) + ",\"rows\":[";
+        for (size_t i = 0; i < sb.rows.size(); ++i) {
+            const auto& r = sb.rows[i];
+            o += std::string(i ? "," : "") + "[" + Quote(r.id) + "," + N(r.playing) + "," + N(r.maxPlayers) + "," + N(r.ping) + "," + N(r.fps) +
+                 "," + Quote(r.region) + "," + B(r.regionTried) + "]";
+        }
+        o += "]}";
+    }
+    {
+        std::lock_guard<std::mutex> lock(backend::friendsMutex);
+        const auto& fs = backend::friendsState;
+        o += ",\"friends\":{\"userId\":" + N(fs.userId) + ",\"loading\":" + B(fs.loading) + ",\"error\":" + Quote(fs.error) +
+             ",\"total\":" + N(fs.total) + ",\"online\":" + N(fs.online) + ",\"rows\":[";
+        for (size_t i = 0; i < fs.rows.size(); ++i) {
+            const auto& r = fs.rows[i];
+            o += std::string(i ? "," : "") + "{\"id\":" + N(r.id) + ",\"name\":" + Quote(r.name) + ",\"display\":" + Quote(r.display) +
+                 ",\"game\":" + Quote(r.game) + ",\"gameId\":" + Quote(r.gameId) + ",\"placeId\":" + N(r.placeId) +
+                 ",\"avatar\":" + Quote(r.avatarUrl) + "}";
+        }
+        o += "]}";
+    }
+    {
+        std::lock_guard<std::mutex> lock(backend::playtimeMutex);
+        o += ",\"playtime\":{\"games\":{";
+        bool first = true;
+        for (auto& kv : backend::playtimeGames) {
+            o += std::string(first ? "" : ",") + Quote(std::to_string(kv.first)) + ":{\"root\":" + N(kv.second.rootPlaceId) +
+                 ",\"name\":" + Quote(kv.second.name) + ",\"icon\":" + Quote(kv.second.iconUrl) + "}";
+            first = false;
+        }
+        o += "},\"entries\":[";
+        for (size_t i = 0; i < backend::playtime.size(); ++i) {
+            const auto& e = backend::playtime[i];
+            o += std::string(i ? "," : "") + "[" + N(e.userId) + "," + Quote(std::to_string(e.universeId)) + "," + N(e.seconds / 60) + "," + N(e.lastPlayed / 300) + "]";
+        }
+        o += "],\"active\":{";
+        first = true;
+        for (auto& kv : backend::playSessions) { o += std::string(first ? "" : ",") + Quote(std::to_string(kv.first)) + ":" + Quote(std::to_string(kv.second)); first = false; }
+        o += "}}";
+    }
+    o += std::string(",\"discord\":{\"enabled\":") + B(backend::discordEnabled.load()) +
+         ",\"connected\":" + B(backend::discordConnected.load()) + ",\"timeMode\":" + N(backend::discordTimeMode.load()) +
+         ",\"timeOffset\":" + N(backend::discordTimeOffset.load()) + "}";
+    {
         std::lock_guard<std::mutex> lock(backend::updateMutex);
         o += ",\"update\":{\"status\":" + Quote(backend::updateState.status) + ",\"message\":" + Quote(backend::updateState.message) +
              ",\"progress\":" + N((long long)(backend::updateState.progress * 100.0f + 0.5f)) +
@@ -550,7 +657,6 @@ static void HandlePageMessage(const std::string& text) {
     } else if (cmd == "launchClient") {
         std::vector<long long> ids = OrderedIds(m["ids"]);
         if (ids.empty()) {
-            // No selection: sign in as the top account, or open a plain client if there are none.
             std::lock_guard<std::mutex> lock(backend::accountsMutex);
             if (!backend::accounts.empty()) ids.push_back(backend::accounts[0].userId);
         }
@@ -576,8 +682,6 @@ static void HandlePageMessage(const std::string& text) {
             std::string code = aps.linkCode;
             bool best = code.empty() && backend::joinBestServer.load();
             std::thread([ids, placeId, code, best]() {
-                // For best-ping, resolve one server for the whole batch so every
-                // selected account lands in the same low-ping server (one API call).
                 std::string gameId = best ? backend::FindBestServer(placeId) : "";
                 for (size_t k = 0; k < ids.size(); ++k) {
                     int idx = IndexOfUser(ids[k]);
@@ -601,9 +705,95 @@ static void HandlePageMessage(const std::string& text) {
         if (m["monitor"].type == json::Value::Number) s.monitor = (int)m["monitor"].i64();
         if (m["auto"].type == json::Value::Bool) s.autoArrange = m["auto"].boolean();
         backend::SetArrangeSettings(s);
-        // Re-tile straight away so the change is visible (and when auto just turned on).
         if (m["apply"].boolean() || (s.autoArrange && !wasAuto))
             std::thread([]() { backend::ArrangeRobloxWindows(""); }).detach();
+    } else if (cmd == "setFps") {
+        int cap = (int)m["cap"].i64();
+        for (const auto& v : m["ids"].a) backend::SetFpsCap(v.i64(), cap);
+    } else if (cmd == "modPick") {
+        std::string id = m["id"].str();
+        std::wstring path = OpenModFileDialog(g_hwnd, id == "death");
+        if (!path.empty()) std::thread([id, path]() { backend::SetClientModFile(id, path); }).detach();
+    } else if (cmd == "modClear") {
+        std::string id = m["id"].str();
+        std::thread([id]() { backend::ClearClientMod(id); }).detach();
+    } else if (cmd == "flagSet") {
+        std::string name = m["name"].str(), value = m["value"].str();
+        std::thread([name, value]() {
+            if (!backend::SetFastFlag(name, value)) backend::Log("[!] " + name + " did not accept that value.");
+        }).detach();
+    } else if (cmd == "flagsExport") {
+        std::wstring path = JsonFileDialog(g_hwnd, true);
+        if (!path.empty()) {
+            std::string json = backend::ExportFastFlagsJson();
+            FILE* f = _wfopen(path.c_str(), L"wb");
+            if (f) { fwrite(json.data(), 1, json.size(), f); fclose(f); backend::Log("[v] Fast flags exported."); }
+            else backend::Log("[!] Could not write that file.");
+        }
+    } else if (cmd == "flagsImport") {
+        std::wstring path = JsonFileDialog(g_hwnd, false);
+        if (!path.empty()) {
+            std::thread([path]() {
+                FILE* f = _wfopen(path.c_str(), L"rb");
+                if (!f) { backend::Log("[!] Could not open that file."); return; }
+                std::string data;
+                char buf[8192];
+                size_t n;
+                while ((n = fread(buf, 1, sizeof(buf), f)) > 0 && data.size() < (1 << 20)) data.append(buf, n);
+                fclose(f);
+                ImportFlagsText(data);
+            }).detach();
+        }
+    } else if (cmd == "flagsImportText") {
+        std::string data = m["text"].str();
+        std::thread([data]() { ImportFlagsText(data); }).detach();
+    } else if (cmd == "flagsReset") {
+        std::thread([]() { backend::ResetFastFlags(); }).detach();
+    } else if (cmd == "serversLoad") {
+        long long placeId = backend::savedPlaceId.load();
+        bool smallest = m["smallest"].boolean();
+        std::vector<long long> ids = OrderedIds(m["ids"]);
+        long long who = ids.empty() ? 0 : ids[0];
+        std::thread([placeId, smallest, who]() { backend::LoadServerBrowser(placeId, smallest, who); }).detach();
+    } else if (cmd == "friendsLoad") {
+        long long userId = m["userId"].i64();
+        std::thread([userId]() { backend::LoadFriends(userId); }).detach();
+    } else if (cmd == "playtimeClear") {
+        backend::ClearPlaytime();
+    } else if (cmd == "historyClear") {
+        backend::ClearServerHistory();
+    } else if (cmd == "historyRemove") {
+        backend::RemoveServerVisit(m["gameId"].str());
+    } else if (cmd == "historyJoin") {
+        std::string gameId = m["gameId"].str();
+        backend::ServerVisit visit;
+        {
+            std::lock_guard<std::mutex> lock(backend::historyMutex);
+            for (const auto& v : backend::serverHistory) if (v.gameId == gameId) visit = v;
+        }
+        std::vector<long long> ids = OrderedIds(m["ids"]);
+        if (ids.empty() && IndexOfUser(visit.userId) >= 0) ids.push_back(visit.userId);
+        if (ids.empty()) {
+            std::lock_guard<std::mutex> lock(backend::accountsMutex);
+            if (!backend::accounts.empty()) ids.push_back(backend::accounts[0].userId);
+        }
+        if (visit.placeId <= 0) backend::Log("[!] That server is no longer in the history.");
+        else if (ids.empty()) backend::Log("[!] Add an account first.");
+        else {
+            std::thread([ids, visit]() {
+                for (size_t k = 0; k < ids.size(); ++k) {
+                    int idx = IndexOfUser(ids[k]);
+                    if (idx < 0) continue;
+                    if (!visit.linkCode.empty()) backend::LaunchAccountIntoPrivateServer(idx, visit.placeId, visit.linkCode);
+                    else backend::LaunchAccountIntoServer(idx, visit.placeId, visit.gameId);
+                    if (k + 1 < ids.size()) Sleep(300);
+                }
+            }).detach();
+        }
+    } else if (cmd == "discordTime") {
+        backend::SetDiscordTime((int)m["mode"].i64(), (int)m["offset"].i64());
+    } else if (cmd == "discordSet") {
+        backend::SetDiscordEnabled(m["enabled"].boolean());
     } else if (cmd == "updateCheck") {
         std::thread([]() { backend::CheckForUpdate(); }).detach();
     } else if (cmd == "updateSettings") {
@@ -670,7 +860,8 @@ static void HandlePageMessage(const std::string& text) {
         }
     } else if (cmd == "browser") {
         std::vector<long long> ids = OrderedIds(m["ids"]);
-        std::thread([ids]() {
+        if (!login::ChromeInstalled()) PostToPage("{\"type\":\"needChrome\",\"what\":\"web\"}");
+        else std::thread([ids]() {
             for (long long id : ids) {
                 int idx = IndexOfUser(id);
                 if (idx >= 0) backend::OpenAccountWeb(idx);
@@ -725,7 +916,8 @@ static void HandlePageMessage(const std::string& text) {
         if (alias != currentAlias) backend::SetAccountAlias(idx, alias);
         if (m["setPassword"].boolean()) backend::SetAccountPassword(idx, m["password"].str());
     } else if (cmd == "login") {
-        if (!g_loginInProgress.exchange(true)) {
+        if (!login::ChromeInstalled()) PostToPage("{\"type\":\"needChrome\",\"what\":\"login\"}");
+        else if (!g_loginInProgress.exchange(true)) {
             std::thread([]() {
                 login::ShowRobloxLoginWindow(g_exeDir, [](bool ok, std::string cookie) {
                     if (ok) backend::AddAccountFromCookie(cookie);
@@ -834,10 +1026,9 @@ static void HandlePageMessage(const std::string& text) {
         if (!version.empty()) std::thread([version]() { backend::DeleteBuild(version); }).detach();
     } else if (cmd == "openUrl") {
         std::string url = m["url"].str();
-        if (url.rfind("https://www.roblox.com/", 0) == 0)
+        if (url.rfind("https://www.roblox.com/", 0) == 0 || url == "https://www.google.com/chrome/")
             ShellExecuteW(nullptr, L"open", Widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     } else if (cmd == "frame") {
-        // Recolour the Windows caption bar (min/max/close) to match the theme.
         auto parseHex = [](const std::string& h) -> COLORREF {
             if (h.size() != 7 || h[0] != '#') return CLR_INVALID;
             auto hx = [&](int i) { return (int)strtol(h.substr(i, 2).c_str(), nullptr, 16); };
@@ -845,14 +1036,14 @@ static void HandlePageMessage(const std::string& text) {
         };
         COLORREF cap = parseHex(m["bg"].str()), txt = parseHex(m["text"].str()), bd = parseHex(m["border"].str());
         if (cap != CLR_INVALID) {
-            DwmSetWindowAttribute(g_hwnd, 35 /* DWMWA_CAPTION_COLOR */, &cap, sizeof(cap));
+            DwmSetWindowAttribute(g_hwnd, 35 , &cap, sizeof(cap));
             g_clientBg = cap;
             double l = 0.299 * GetRValue(cap) + 0.587 * GetGValue(cap) + 0.114 * GetBValue(cap);
             BOOL dark = l < 140 ? TRUE : FALSE;
-            DwmSetWindowAttribute(g_hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+            DwmSetWindowAttribute(g_hwnd, 20 , &dark, sizeof(dark));
         }
-        if (bd != CLR_INVALID) DwmSetWindowAttribute(g_hwnd, 34 /* DWMWA_BORDER_COLOR */, &bd, sizeof(bd));
-        if (txt != CLR_INVALID) DwmSetWindowAttribute(g_hwnd, 36 /* DWMWA_TEXT_COLOR */, &txt, sizeof(txt));
+        if (bd != CLR_INVALID) DwmSetWindowAttribute(g_hwnd, 34 , &bd, sizeof(bd));
+        if (txt != CLR_INVALID) DwmSetWindowAttribute(g_hwnd, 36 , &txt, sizeof(txt));
     }
 
     Tick();
@@ -931,8 +1122,6 @@ static void ShowWebViewFailure(HRESULT hr) {
     PostMessageW(g_hwnd, WM_CLOSE, 0, 0);
 }
 
-// Keep the WebView hidden until the page has painted its loader, so the first
-// thing on screen is the loading screen, not a bare/flashing browser surface.
 static void LoadSplashBitmap() {
     const BYTE* data = nullptr;
     DWORD size = 0;
@@ -945,7 +1134,6 @@ static void LoadSplashBitmap() {
     IWICBitmapFrameDecode* frame = nullptr;
     IWICFormatConverter* converter = nullptr;
     IWICBitmapScaler* scaler = nullptr;
-    // Pre-scaled to the size it is painted at: AlphaBlend's own stretching is jagged.
     UINT target = (UINT)MulDiv(86, GetDpiForSystem(), 96);
     if (SUCCEEDED(factory->CreateStream(&stream)) &&
         SUCCEEDED(stream->InitializeFromMemory(const_cast<BYTE*>(data), size)) &&
@@ -961,7 +1149,7 @@ static void LoadSplashBitmap() {
             BITMAPINFO bi = {};
             bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
             bi.bmiHeader.biWidth = (LONG)w;
-            bi.bmiHeader.biHeight = -(LONG)h;  // top-down
+            bi.bmiHeader.biHeight = -(LONG)h;
             bi.bmiHeader.biPlanes = 1;
             bi.bmiHeader.biBitCount = 32;
             bi.bmiHeader.biCompression = BI_RGB;
@@ -994,7 +1182,6 @@ static void PaintSplash(HDC hdc, const RECT& rc) {
     if (!dpi) dpi = 96;
     int cx = (rc.left + rc.right) / 2, cy = (rc.top + rc.bottom) / 2;
 
-    // The icon brings its own black rounded tile, so it is drawn at the loader mark's full size.
     int iw = MulDiv(86, dpi, 96), ih = iw * g_splashH / (g_splashW ? g_splashW : 1);
     HDC mem = CreateCompatibleDC(hdc);
     HGDIOBJ oldBmp = SelectObject(mem, g_splashBmp);
@@ -1071,15 +1258,12 @@ static void OnControllerCreated(ICoreWebView2Controller* controller) {
     newWindowHandler->Release();
 
     g_webview->Navigate((std::wstring(kAppOrigin) + L"index.html").c_str());
-    // Failsafe: reveal even if the page never sends 'ready'.
     SetTimer(g_hwnd, kRevealTimer, 4000, nullptr);
 }
 
 using CreateEnvironmentFn = HRESULT(STDAPICALLTYPE*)(PCWSTR, PCWSTR, ICoreWebView2EnvironmentOptions*,
     ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler*);
 
-// WebView2Loader.dll is embedded in the exe so the tool still ships as one
-// file. A copy next to the exe wins; otherwise it is unpacked to LocalAppData.
 static CreateEnvironmentFn LoadWebView2Loader() {
     std::vector<std::wstring> candidates = { g_exeDir + L"\\WebView2Loader.dll" };
 
@@ -1119,10 +1303,6 @@ static void InitWebView() {
     CreateEnvironmentFn createEnvironment = LoadWebView2Loader();
     if (!createEnvironment) { ShowWebViewFailure(HRESULT_FROM_WIN32(ERROR_MOD_NOT_FOUND)); return; }
 
-    // Stay on WebView2's default Direct3D 11 GPU path, tuned for smoothness: GPU raster,
-    // zero-copy uploads, and no throttling or occlusion pauses (the admin hand-off window
-    // has to paint while it's still covered by the old one). The variable is restored
-    // once the browser process has started so Roblox's own WebViews don't inherit it.
     static std::wstring previousArgs;
     static bool hadPreviousArgs = false;
     {
@@ -1130,10 +1310,6 @@ static void InitWebView() {
         DWORD n = GetEnvironmentVariableW(L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", existing, 2048);
         hadPreviousArgs = n > 0 && n < 2048;
         if (hadPreviousArgs) previousArgs.assign(existing, n);
-        // Note: GPU rasterization is intentionally NOT forced - it makes Chromium
-        // render text with grayscale AA instead of crisp ClearType. Keep smooth
-        // scrolling and no throttling/occlusion pauses (the last matters for the
-        // admin hand-off, which paints while still covered by the old window).
         std::wstring flags = L"--enable-smooth-scrolling "
                              L"--disable-background-timer-throttling --disable-renderer-backgrounding "
                              L"--disable-features=CalculateNativeWinOcclusion";
@@ -1144,7 +1320,6 @@ static void InitWebView() {
         SetEnvironmentVariableW(L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", hadPreviousArgs ? previousArgs.c_str() : nullptr);
     };
 
-    // Admin and non-admin copies can't share one browser profile, and briefly run side by side during the hand-off.
     std::wstring dataDir = g_exeDir + (backend::IsElevated() ? L"\\webview2_data_admin" : L"\\webview2_data");
     auto* envHandler = new ComHandler<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
         HRESULT, ICoreWebView2Environment*>(IID_EnvCompletedHandler,
@@ -1203,7 +1378,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_TIMER:
         if (wParam == kStateTimer && !IsIconic(hwnd)) Tick();
         else if (wParam == kHandoffTimer) {
-            // The admin copy has painted under the old window: take focus and retire the old one.
             KillTimer(hwnd, kHandoffTimer);
             g_handoffDone = true;
             SetForegroundWindow(hwnd);
@@ -1216,7 +1390,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     case kMsgElevateResult:
         if (wParam) {
-            // Free the cookie lock and singleton mutex so the admin copy can take them over.
             g_retiring = true;
             KillTimer(hwnd, kStateTimer);
             backend::Shutdown();
@@ -1228,8 +1401,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         }
         return 0;
     case kMsgUpdateReady: {
-        // The exe on disk is now the new build: start it and hand this window over to it,
-        // the same way the admin relaunch does.
         if (g_elevating.exchange(true)) return 0;
         wchar_t path[MAX_PATH];
         GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -1249,7 +1420,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
     }
     case WM_ERASEBKGND:
-        return 1;  // handled in WM_PAINT to avoid flicker
+        return 1;
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
@@ -1284,7 +1455,6 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmd
         g_handoffFrom = reinterpret_cast<HWND>((INT_PTR)_wtoi64(cmdLine.c_str() + handoffPos + 10));
     bool enableMulti = cmdLine.find(L"--multi") != std::wstring::npos;
 
-    // Give the previous (non-admin) copy a moment to release its locks.
     if (g_handoffFrom) Sleep(500);
     backend::Init(g_exeDir);
     if (enableMulti && backend::IsElevated()) backend::StartWatching();
@@ -1317,18 +1487,19 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmd
         x, y, width, height, nullptr, nullptr, hInstance, nullptr);
     if (!g_hwnd) return 1;
 
-    // Dark native frame that blends into the page (caption colours are Windows 11 only).
+    WTA_OPTIONS noCaption = { WTNCA_NODRAWCAPTION | WTNCA_NODRAWICON, WTNCA_NODRAWCAPTION | WTNCA_NODRAWICON };
+    SetWindowThemeAttribute(g_hwnd, WTA_NONCLIENT, &noCaption, sizeof(noCaption));
+
     BOOL dark = TRUE;
-    DwmSetWindowAttribute(g_hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+    DwmSetWindowAttribute(g_hwnd, 20 , &dark, sizeof(dark));
     COLORREF caption = kBgColor, border = RGB(35, 38, 44), captionText = RGB(200, 204, 211);
-    DwmSetWindowAttribute(g_hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
-    DwmSetWindowAttribute(g_hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
-    DwmSetWindowAttribute(g_hwnd, 36 /* DWMWA_TEXT_COLOR */, &captionText, sizeof(captionText));
+    DwmSetWindowAttribute(g_hwnd, 35 , &caption, sizeof(caption));
+    DwmSetWindowAttribute(g_hwnd, 34 , &border, sizeof(border));
+    DwmSetWindowAttribute(g_hwnd, 36 , &captionText, sizeof(captionText));
 
     WINDOWPLACEMENT oldPlacement = {};
     oldPlacement.length = sizeof(oldPlacement);
     if (g_handoffFrom && IsWindow(g_handoffFrom) && GetWindowPlacement(g_handoffFrom, &oldPlacement)) {
-        // Open exactly where the old window is, tucked underneath it until we're ready.
         WINDOWPLACEMENT wp = oldPlacement;
         wp.showCmd = oldPlacement.showCmd == SW_SHOWMAXIMIZED ? SW_SHOWMAXIMIZED : SW_SHOWNOACTIVATE;
         SetWindowPlacement(g_hwnd, &wp);
@@ -1341,7 +1512,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int nCmd
 
     InitWebView();
     SetTimer(g_hwnd, kStateTimer, 500, nullptr);
-    SetTimer(g_hwnd, kRevealTimer, 5000, nullptr);  // failsafe if the page never loads
+    SetTimer(g_hwnd, kRevealTimer, 5000, nullptr);
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

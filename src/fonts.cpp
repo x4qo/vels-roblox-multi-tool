@@ -1,6 +1,3 @@
-// Custom Roblox font: copies one user-chosen font into each Roblox install and points
-// every font family at it (content\fonts\families\*.json), the same way Bloxstrap does.
-// The original family files are kept in families.velsbak so turning it off restores them.
 
 #include "backend.h"
 
@@ -23,8 +20,8 @@ std::mutex customFontMutex;
 CustomFontState customFont;
 
 static std::atomic<bool> g_fontEnabled{ false };
-static std::mutex g_fontWorkMutex;           // one apply/restore pass at a time
-static std::set<std::wstring> g_fontWarned;  // installs already reported as failing
+static std::mutex g_fontWorkMutex;
+static std::set<std::wstring> g_fontWarned;
 
 static const wchar_t* kFontFile = L"CustomFont.ttf";
 static const wchar_t* kBackupDir = L"families.velsbak";
@@ -49,7 +46,6 @@ static void SaveFontSettings() {
     if (f) f << (s.enabled ? 1 : 0) << '\n' << s.name << '\n';
 }
 
-// Changes whenever the stored font does, so installs know when they are out of date.
 static std::string FontStamp() {
     std::error_code ec;
     auto size = fs::file_size(StoredFontPath(), ec);
@@ -59,7 +55,6 @@ static std::string FontStamp() {
     return std::to_string(size) + "-" + std::to_string(t.time_since_epoch().count());
 }
 
-// TrueType, OpenType (CFF) and TrueType collections - what Roblox's FreeType can load.
 static bool LooksLikeFont(const std::wstring& path) {
     FILE* f = _wfopen(path.c_str(), L"rb");
     if (!f) return false;
@@ -71,11 +66,9 @@ static bool LooksLikeFont(const std::wstring& path) {
            memcmp(m, "ttcf", 4) == 0 || memcmp(m, "true", 4) == 0;
 }
 
-// Third-party launchers that keep their own Roblox install and re-apply their own
-// Modifications folder (custom font included) on every launch.
 static const wchar_t* kStraps[] = { L"Bloxstrap", L"Fishstrap" };
 
-static std::vector<fs::path> StrapDirs() {
+std::vector<fs::path> StrapDirs() {
     std::vector<fs::path> out;
     const wchar_t* local = _wgetenv(L"LOCALAPPDATA");
     if (!local) return out;
@@ -87,9 +80,7 @@ static std::vector<fs::path> StrapDirs() {
     return out;
 }
 
-// Every Roblox install we know about: the normal ones, the downloaded builds and the
-// clients Bloxstrap/Fishstrap keep (Versions\<hash> on older releases, Roblox\Player now).
-static std::vector<fs::path> RobloxInstalls() {
+std::vector<fs::path> RobloxInstalls() {
     std::vector<fs::path> roots;
     if (const wchar_t* local = _wgetenv(L"LOCALAPPDATA")) roots.push_back(fs::path(local) / L"Roblox" / L"Versions");
     if (const wchar_t* pf86 = _wgetenv(L"ProgramFiles(x86)")) roots.push_back(fs::path(pf86) / L"Roblox" / L"Versions");
@@ -130,8 +121,6 @@ static bool WriteFile(const fs::path& p, const std::string& data) {
     return (bool)f;
 }
 
-// Copies the untouched family files aside once, via a temp folder so a half-finished
-// copy is never mistaken for a complete backup.
 static bool BackupFamilies(const fs::path& families, const fs::path& backup) {
     std::error_code ec;
     if (fs::exists(backup, ec)) return true;
@@ -163,7 +152,6 @@ static FontResult ApplyToInstall(const fs::path& install, const std::string& sta
         return FontResult::Fresh;
 
     if (!BackupFamilies(families, backup)) return FontResult::Failed;
-    // Font first, so a family file never points at a font that isn't there yet.
     if (!CopyFileW(StoredFontPath().c_str(), fontFile.c_str(), FALSE)) return FontResult::Failed;
 
     static const std::regex assetRe("(\"assetId\"\\s*:\\s*)\"[^\"]*\"");
@@ -178,7 +166,6 @@ static FontResult ApplyToInstall(const fs::path& install, const std::string& sta
     return WriteFile(stampFile, stamp) ? FontResult::Applied : FontResult::Failed;
 }
 
-// Puts the original family files back. Returns false only if an install could not be restored.
 static bool RestoreInstall(const fs::path& install, bool& changed) {
     fs::path fonts = install / L"content" / L"fonts";
     fs::path families = fonts / L"families", backup = fonts / kBackupDir;
@@ -187,18 +174,15 @@ static bool RestoreInstall(const fs::path& install, bool& changed) {
     if (!fs::exists(backup, ec)) return true;
     for (auto& e : fs::directory_iterator(backup, ec)) {
         if (!e.is_regular_file(ec)) continue;
-        if (!CopyFileW(e.path().c_str(), (families / e.path().filename()).c_str(), FALSE)) return false;  // keep the backup
+        if (!CopyFileW(e.path().c_str(), (families / e.path().filename()).c_str(), FALSE)) return false;
     }
     fs::remove_all(backup, ec);
     fs::remove(fonts / kStampFile, ec);
-    fs::remove(fonts / kFontFile, ec);  // may be held open by a running client; harmless if left
+    fs::remove(fonts / kFontFile, ec);
     changed = true;
     return true;
 }
 
-// Bloxstrap and Fishstrap rebuild the client's fonts from their Modifications folder each
-// time they launch, so the font goes there as well - otherwise their own font (or the
-// default) would win. A font the user had set in the launcher is kept and put back later.
 static FontResult ApplyToStrap(const fs::path& strap, const std::string& stamp) {
     fs::path fonts = strap / L"Modifications" / L"content" / L"fonts";
     fs::path fontFile = fonts / kFontFile, stampFile = strap / kStampFile, backup = strap / L"CustomFont.velsbak.ttf";
@@ -224,14 +208,13 @@ static bool RestoreStrap(const fs::path& strap, bool& changed) {
     if (fs::exists(backup, ec)) {
         if (!MoveFileExW(backup.c_str(), fontFile.c_str(), MOVEFILE_REPLACE_EXISTING)) return false;
     } else {
-        fs::remove(fontFile, ec);  // the launcher drops its generated family files once this is gone
+        fs::remove(fontFile, ec);
     }
     fs::remove(stampFile, ec);
     changed = true;
     return true;
 }
 
-// verbose: report the outcome even when nothing changed (user pressed a button).
 static void ApplyAll(bool verbose) {
     std::lock_guard<std::mutex> work(g_fontWorkMutex);
     std::string stamp = FontStamp();
@@ -306,7 +289,6 @@ void LoadCustomFont() {
     }
     { std::lock_guard<std::mutex> lk(customFontMutex); customFont = s; }
     g_fontEnabled = s.enabled;
-    // Roblox may have updated into a fresh folder since last run.
     if (s.enabled) std::thread([]() { ApplyAll(false); }).detach();
 }
 
@@ -316,7 +298,6 @@ bool SetCustomFontFile(const std::wstring& path) {
         return false;
     }
     {
-        // Held so a launch can't copy a half-written font into an install.
         std::lock_guard<std::mutex> work(g_fontWorkMutex);
         std::error_code ec;
         if (!fs::equivalent(path, StoredFontPath(), ec) && !CopyFileW(path.c_str(), StoredFontPath().c_str(), FALSE)) {
@@ -353,4 +334,4 @@ void EnsureCustomFont() {
     if (g_fontEnabled) ApplyAll(false);
 }
 
-}  // namespace backend
+}
