@@ -16,7 +16,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-rem Embeds the icon, ui\index.html, the brand image, the Inter font and WebView2Loader.dll.
+rem Embeds the icon, ui\index.html, the brand image and WebView2Loader.dll.
 windres src\app.rc -O coff -o src\app_icon.res
 if errorlevel 1 (
     echo Failed to compile resources.

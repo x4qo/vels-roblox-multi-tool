@@ -1,6 +1,6 @@
 # Vels Multi Tool
 
-Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a native C++ Win32 app whose interface is an HTML page rendered with Microsoft Edge WebView2, kept separate from the automation/backend code. The page, fonts, brand icon and `WebView2Loader.dll` are all embedded in the exe.
+Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a native C++ Win32 app whose interface is an HTML page rendered with Microsoft Edge WebView2, kept separate from the automation/backend code. The page, brand icon and `WebView2Loader.dll` are all embedded in the exe; text uses the Windows system font (Segoe UI).
 
 ## Features
 
@@ -12,7 +12,9 @@ Vels Multi Tool is a Windows desktop utility for Roblox workflows. It is a nativ
 
 **Downgrading.** Live, previous and upcoming Windows versions come from the WEAO API. Picking one downloads the packages from Roblox's deployment CDN the same way rdd.weao.gg does, unpacks them into `Builds\<version-hash>` next to the exe, and writes the `AppSettings.xml` the client needs. A switch decides whether launches use that build or your normal install, so deleting the folder is all it takes to undo.
 
-**Custom font.** Settings → Roblox font takes a `.ttf`, `.otf` or `.ttc` and uses it for all text in the client. The font is copied to `content\fonts\CustomFont.ttf` in every Roblox install (system installs and downloaded builds) and each file in `content\fonts\families` is pointed at it. The untouched family files are kept in `families.velsbak`, so switching it off puts them back. Roblox updates land in a new folder, so the font is re-applied at startup and before each launch.
+**Custom font.** Settings → Roblox font takes a `.ttf`, `.otf` or `.ttc` and uses it for all text in the client. The font is copied to `content\fonts\CustomFont.ttf` in every Roblox install (system installs and downloaded builds) and each file in `content\fonts\families` is pointed at it. The untouched family files are kept in `families.velsbak`, so switching it off puts them back. Roblox updates land in a new folder, so the font is re-applied at startup and before each launch. If Bloxstrap or Fishstrap is installed, the font is also placed in its `Modifications` folder so it wins over a font set there; that font is kept and put back when you switch this off.
+
+**Updates.** Settings → Updates compares the running exe with the prebuilt one on GitHub by git blob hash. Updating downloads it, verifies the hash, swaps it in (the old exe is kept as `VelsMultiTool.exe.old` until the next start) and restarts. The same check runs at startup and offers the update in a dialog. "Do not show this again" turns that off, and the **Auto-update** switch (off by default) installs new builds without asking; both are stored in `update.dat`. A local build newer than the one on GitHub is never replaced.
 
 **Cleanup.** Clears `RobloxCookies.dat` and can lock it, and scans browsers for leftover Roblox cookies. MAC spoofing lists adapters and restores the original address.
 
@@ -86,7 +88,6 @@ Then run `VelsMultiTool.exe`. The app will request administrator access when nee
 
 ```text
 assets/              App icon (app.ico) and brand image (brand.png)
-fonts/               Inter font, embedded into the exe
 ui/index.html        The whole interface (HTML/CSS/JS), embedded into the exe
 third_party/webview2 WebView2 SDK headers and WebView2Loader.dll
 src/main.cpp         Win32 window, WebView2 host and UI message bridge

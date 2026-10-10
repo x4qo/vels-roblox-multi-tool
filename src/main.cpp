@@ -70,6 +70,7 @@ static std::atomic<bool> g_multiBusy{ false };
 // Elevation hand-off: the non-admin window stays up while the admin copy
 // loads underneath it, then the admin copy closes it.
 static const UINT kMsgElevateResult = WM_APP + 1;
+static const UINT kMsgUpdateReady = WM_APP + 2;
 static const UINT_PTR kHandoffTimer = 2;
 static const UINT_PTR kRetireFailsafeTimer = 3;
 static std::atomic<bool> g_elevating{ false };
@@ -424,6 +425,13 @@ static std::string BuildStateJson() {
              ",\"has\":" + B(backend::customFont.hasFont) + ",\"name\":" + Quote(backend::customFont.name) + "}";
     }
     {
+        std::lock_guard<std::mutex> lock(backend::updateMutex);
+        o += ",\"update\":{\"status\":" + Quote(backend::updateState.status) + ",\"message\":" + Quote(backend::updateState.message) +
+             ",\"progress\":" + N((long long)(backend::updateState.progress * 100.0f + 0.5f)) +
+             std::string(",\"prompt\":") + B(backend::updateState.prompt) +
+             ",\"notify\":" + B(backend::updateNotify.load()) + ",\"auto\":" + B(backend::updateAuto.load()) + "}";
+    }
+    {
         std::lock_guard<std::mutex> lock(backend::lastServerMutex);
         o += ",\"lastServer\":{\"placeId\":" + N(backend::lastServer.placeId) +
              std::string(",\"has\":") + B(backend::lastServer.placeId > 0 && !backend::lastServer.gameId.empty()) + "}";
@@ -596,6 +604,16 @@ static void HandlePageMessage(const std::string& text) {
         // Re-tile straight away so the change is visible (and when auto just turned on).
         if (m["apply"].boolean() || (s.autoArrange && !wasAuto))
             std::thread([]() { backend::ArrangeRobloxWindows(""); }).detach();
+    } else if (cmd == "updateCheck") {
+        std::thread([]() { backend::CheckForUpdate(); }).detach();
+    } else if (cmd == "updateSettings") {
+        bool notify = backend::updateNotify.load(), autoOn = backend::updateAuto.load();
+        if (m["notify"].type == json::Value::Bool) notify = m["notify"].boolean();
+        if (m["auto"].type == json::Value::Bool) autoOn = m["auto"].boolean();
+        backend::SetUpdateSettings(notify, autoOn);
+    } else if (cmd == "updateInstall") {
+        HWND owner = g_hwnd;
+        std::thread([owner]() { if (backend::InstallUpdate()) PostMessageW(owner, kMsgUpdateReady, 0, 0); }).detach();
     } else if (cmd == "fontPick") {
         std::wstring path = OpenFontFileDialog(g_hwnd);
         if (!path.empty()) std::thread([path]() { backend::SetCustomFontFile(path); }).detach();
@@ -868,9 +886,6 @@ static HRESULT ServeResource(ICoreWebView2WebResourceRequestedEventArgs* args) {
     } else if (path == L"brand.png") {
         LoadResourceBytes(IDR_BRAND_PNG, data, size);
         mime = L"image/png";
-    } else if (path == L"inter.ttf") {
-        LoadResourceBytes(IDR_FONT_INTER, data, size);
-        mime = L"font/ttf";
     } else if (path.rfind(L"avatar/", 0) == 0) {
         long long id = _wtoi64(path.c_str() + 7);
         std::lock_guard<std::mutex> lock(backend::accountsMutex);
@@ -929,14 +944,19 @@ static void LoadSplashBitmap() {
     IWICBitmapDecoder* decoder = nullptr;
     IWICBitmapFrameDecode* frame = nullptr;
     IWICFormatConverter* converter = nullptr;
+    IWICBitmapScaler* scaler = nullptr;
+    // Pre-scaled to the size it is painted at: AlphaBlend's own stretching is jagged.
+    UINT target = (UINT)MulDiv(86, GetDpiForSystem(), 96);
     if (SUCCEEDED(factory->CreateStream(&stream)) &&
         SUCCEEDED(stream->InitializeFromMemory(const_cast<BYTE*>(data), size)) &&
         SUCCEEDED(factory->CreateDecoderFromStream(stream, nullptr, WICDecodeMetadataCacheOnLoad, &decoder)) &&
         SUCCEEDED(decoder->GetFrame(0, &frame)) &&
         SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
-        SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom))) {
+        SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom)) &&
+        SUCCEEDED(factory->CreateBitmapScaler(&scaler)) &&
+        SUCCEEDED(scaler->Initialize(converter, target, target, WICBitmapInterpolationModeFant))) {
         UINT w = 0, h = 0;
-        converter->GetSize(&w, &h);
+        scaler->GetSize(&w, &h);
         if (w && h) {
             BITMAPINFO bi = {};
             bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -947,7 +967,7 @@ static void LoadSplashBitmap() {
             bi.bmiHeader.biCompression = BI_RGB;
             void* bits = nullptr;
             HBITMAP bmp = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-            if (bmp && bits && SUCCEEDED(converter->CopyPixels(nullptr, w * 4, w * h * 4, (BYTE*)bits))) {
+            if (bmp && bits && SUCCEEDED(scaler->CopyPixels(nullptr, w * 4, w * h * 4, (BYTE*)bits))) {
                 g_splashBmp = bmp;
                 g_splashW = (int)w;
                 g_splashH = (int)h;
@@ -956,6 +976,7 @@ static void LoadSplashBitmap() {
             }
         }
     }
+    if (scaler) scaler->Release();
     if (converter) converter->Release();
     if (frame) frame->Release();
     if (decoder) decoder->Release();
@@ -972,18 +993,9 @@ static void PaintSplash(HDC hdc, const RECT& rc) {
     UINT dpi = GetDpiForWindow(g_hwnd);
     if (!dpi) dpi = 96;
     int cx = (rc.left + rc.right) / 2, cy = (rc.top + rc.bottom) / 2;
-    int tile = MulDiv(86, dpi, 96), r = MulDiv(23, dpi, 96);
 
-    HBRUSH tileBrush = CreateSolidBrush(RGB(23, 25, 29));
-    HPEN tilePen = CreatePen(PS_SOLID, 1, RGB(44, 47, 55));
-    HGDIOBJ ob = SelectObject(hdc, tileBrush), op = SelectObject(hdc, tilePen);
-    RoundRect(hdc, cx - tile / 2, cy - tile / 2, cx + tile / 2, cy + tile / 2, r, r);
-    SelectObject(hdc, ob);
-    SelectObject(hdc, op);
-    DeleteObject(tileBrush);
-    DeleteObject(tilePen);
-
-    int iw = MulDiv(52, dpi, 96), ih = iw * g_splashH / (g_splashW ? g_splashW : 1);
+    // The icon brings its own black rounded tile, so it is drawn at the loader mark's full size.
+    int iw = MulDiv(86, dpi, 96), ih = iw * g_splashH / (g_splashW ? g_splashW : 1);
     HDC mem = CreateCompatibleDC(hdc);
     HGDIOBJ oldBmp = SelectObject(mem, g_splashBmp);
     BLENDFUNCTION bf = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
@@ -1215,6 +1227,27 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             PostToPage("{\"type\":\"relaunch\",\"stage\":\"cancelled\"}");
         }
         return 0;
+    case kMsgUpdateReady: {
+        // The exe on disk is now the new build: start it and hand this window over to it,
+        // the same way the admin relaunch does.
+        if (g_elevating.exchange(true)) return 0;
+        wchar_t path[MAX_PATH];
+        GetModuleFileNameW(nullptr, path, MAX_PATH);
+        std::wstring args = L"--handoff=" + std::to_wstring((long long)(INT_PTR)hwnd);
+        if (backend::watching.load()) args += L" --multi";
+        g_retiring = true;
+        KillTimer(hwnd, kStateTimer);
+        if (g_webview) g_webview->PostWebMessageAsJson(L"{\"type\":\"relaunch\",\"stage\":\"update\"}");
+        backend::Shutdown();
+        HINSTANCE r = ShellExecuteW(hwnd, L"open", path, args.c_str(), nullptr, SW_SHOWNOACTIVATE);
+        if ((INT_PTR)r <= 32) {
+            MessageBoxW(hwnd, L"The update is installed. Start Vels Multi Tool again to use it.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
+            DestroyWindow(hwnd);
+        } else {
+            SetTimer(hwnd, kRetireFailsafeTimer, 20000, nullptr);
+        }
+        return 0;
+    }
     case WM_ERASEBKGND:
         return 1;  // handled in WM_PAINT to avoid flicker
     case WM_PAINT: {

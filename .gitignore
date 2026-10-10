@@ -21,7 +21,11 @@ joinbest.dat
 lastserver.dat
 arrange.dat
 font.dat
+update.dat
 customfont.ttf
+*.exe.old
+*.exe.update
+*.prefont.bak
 *.preidle.bak
 *.v3.bak
 

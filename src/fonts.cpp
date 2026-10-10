@@ -71,7 +71,24 @@ static bool LooksLikeFont(const std::wstring& path) {
            memcmp(m, "ttcf", 4) == 0 || memcmp(m, "true", 4) == 0;
 }
 
-// Every Roblox install we know about: the normal ones plus the downloaded builds.
+// Third-party launchers that keep their own Roblox install and re-apply their own
+// Modifications folder (custom font included) on every launch.
+static const wchar_t* kStraps[] = { L"Bloxstrap", L"Fishstrap" };
+
+static std::vector<fs::path> StrapDirs() {
+    std::vector<fs::path> out;
+    const wchar_t* local = _wgetenv(L"LOCALAPPDATA");
+    if (!local) return out;
+    for (const wchar_t* name : kStraps) {
+        std::error_code ec;
+        fs::path dir = fs::path(local) / name;
+        if (fs::is_directory(dir, ec)) out.push_back(dir);
+    }
+    return out;
+}
+
+// Every Roblox install we know about: the normal ones, the downloaded builds and the
+// clients Bloxstrap/Fishstrap keep (Versions\<hash> on older releases, Roblox\Player now).
 static std::vector<fs::path> RobloxInstalls() {
     std::vector<fs::path> roots;
     if (const wchar_t* local = _wgetenv(L"LOCALAPPDATA")) roots.push_back(fs::path(local) / L"Roblox" / L"Versions");
@@ -80,6 +97,12 @@ static std::vector<fs::path> RobloxInstalls() {
     roots.push_back(fs::path(g_exeDir) / L"Builds");
 
     std::vector<fs::path> out;
+    for (const auto& strap : StrapDirs()) {
+        std::error_code ec;
+        roots.push_back(strap / L"Versions");
+        fs::path player = strap / L"Roblox" / L"Player";
+        if (fs::exists(player / L"content" / L"fonts" / L"families", ec)) out.push_back(player);
+    }
     for (const auto& root : roots) {
         std::error_code ec;
         if (!fs::exists(root, ec)) continue;
@@ -173,6 +196,41 @@ static bool RestoreInstall(const fs::path& install, bool& changed) {
     return true;
 }
 
+// Bloxstrap and Fishstrap rebuild the client's fonts from their Modifications folder each
+// time they launch, so the font goes there as well - otherwise their own font (or the
+// default) would win. A font the user had set in the launcher is kept and put back later.
+static FontResult ApplyToStrap(const fs::path& strap, const std::string& stamp) {
+    fs::path fonts = strap / L"Modifications" / L"content" / L"fonts";
+    fs::path fontFile = fonts / kFontFile, stampFile = strap / kStampFile, backup = strap / L"CustomFont.velsbak.ttf";
+    std::error_code ec, ec2;
+
+    std::string have;
+    bool stamped = ReadFile(stampFile, have);
+    auto theirs = fs::file_size(fontFile, ec), ours = fs::file_size(StoredFontPath(), ec2);
+    if (stamped && have == stamp && !ec && !ec2 && theirs == ours) return FontResult::Fresh;
+
+    if (!stamped && !ec && !CopyFileW(fontFile.c_str(), backup.c_str(), FALSE)) return FontResult::Failed;
+    fs::create_directories(fonts, ec);
+    if (!CopyFileW(StoredFontPath().c_str(), fontFile.c_str(), FALSE)) return FontResult::Failed;
+    return WriteFile(stampFile, stamp) ? FontResult::Applied : FontResult::Failed;
+}
+
+static bool RestoreStrap(const fs::path& strap, bool& changed) {
+    fs::path fontFile = strap / L"Modifications" / L"content" / L"fonts" / kFontFile;
+    fs::path stampFile = strap / kStampFile, backup = strap / L"CustomFont.velsbak.ttf";
+    std::error_code ec;
+    changed = false;
+    if (!fs::exists(stampFile, ec)) return true;
+    if (fs::exists(backup, ec)) {
+        if (!MoveFileExW(backup.c_str(), fontFile.c_str(), MOVEFILE_REPLACE_EXISTING)) return false;
+    } else {
+        fs::remove(fontFile, ec);  // the launcher drops its generated family files once this is gone
+    }
+    fs::remove(stampFile, ec);
+    changed = true;
+    return true;
+}
+
 // verbose: report the outcome even when nothing changed (user pressed a button).
 static void ApplyAll(bool verbose) {
     std::lock_guard<std::mutex> work(g_fontWorkMutex);
@@ -182,18 +240,20 @@ static void ApplyAll(bool verbose) {
         return;
     }
     int applied = 0, fresh = 0, failed = 0;
-    for (const auto& install : RobloxInstalls()) {
-        switch (ApplyToInstall(install, stamp)) {
-        case FontResult::Applied: ++applied; g_fontWarned.erase(install.wstring()); break;
+    auto tally = [&](FontResult r, const fs::path& where) {
+        switch (r) {
+        case FontResult::Applied: ++applied; g_fontWarned.erase(where.wstring()); break;
         case FontResult::Fresh:   ++fresh; break;
         case FontResult::Failed:
             ++failed;
-            if (g_fontWarned.insert(install.wstring()).second || verbose)
-                Log("[!] Could not apply the custom font to " + Utf8(install.filename().wstring()) +
+            if (g_fontWarned.insert(where.wstring()).second || verbose)
+                Log("[!] Could not apply the custom font to " + Utf8(where.filename().wstring()) +
                     " (close Roblox, or restart as admin if it is in Program Files).");
             break;
         }
-    }
+    };
+    for (const auto& install : RobloxInstalls()) tally(ApplyToInstall(install, stamp), install);
+    for (const auto& strap : StrapDirs()) tally(ApplyToStrap(strap, stamp), strap);
     std::string name;
     { std::lock_guard<std::mutex> lk(customFontMutex); name = customFont.name; }
     if (verbose) {
@@ -215,6 +275,13 @@ static void RestoreAll() {
             ++failed;
             Log("[!] Could not restore the original fonts in " + Utf8(install.filename().wstring()) +
                 " (close Roblox, or restart as admin if it is in Program Files).");
+        } else if (changed) ++restored;
+    }
+    for (const auto& strap : StrapDirs()) {
+        bool changed = false;
+        if (!RestoreStrap(strap, changed)) {
+            ++failed;
+            Log("[!] Could not put back the font " + Utf8(strap.filename().wstring()) + " had before.");
         } else if (changed) ++restored;
     }
     g_fontWarned.clear();

@@ -273,4 +273,18 @@ bool SetCustomFontFile(const std::wstring& path);
 void SetCustomFontEnabled(bool on);
 void EnsureCustomFont();
 
+// Self-update: compares this exe with the prebuilt one on GitHub (by git blob hash)
+// and can swap it in. status: idle | checking | current | available | downloading | ready | error.
+// prompt: the startup check found an update and the UI should offer it (or, with
+// updateAuto on, start installing it straight away).
+struct UpdateState { std::string status = "idle"; std::string message; float progress = 0.0f; bool prompt = false; };
+extern std::mutex updateMutex;
+extern UpdateState updateState;
+extern std::atomic<bool> updateNotify;  // offer updates at startup (default on)
+extern std::atomic<bool> updateAuto;    // install them without asking (default off)
+void CheckForUpdate();
+bool InstallUpdate();
+void StartupUpdateCheck();
+void SetUpdateSettings(bool notify, bool autoUpdate);
+
 }

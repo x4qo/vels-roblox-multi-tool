@@ -219,6 +219,12 @@ bool RelaunchAsAdmin() {
     return ShellExecuteExW(&sei) != FALSE;
 }
 
+static std::wstring SelfExePath() {
+    wchar_t path[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    return std::wstring(path, n);
+}
+
 void Init(const std::wstring& exeDir) {
     g_exeDir = exeDir;
     g_startTime = std::chrono::steady_clock::now();
@@ -233,6 +239,8 @@ void Init(const std::wstring& exeDir) {
     StartAutoArrangeWatcher();
     LoadRobloxBuilds();
     LoadCustomFont();
+    { std::error_code ec; std::filesystem::remove(SelfExePath() + L".old", ec); }  // left by the last self-update
+    std::thread(StartupUpdateCheck).detach();
     ScrubAndLockRobloxCookieFile("startup");
     HoldMultiRobloxMutex();
 }
@@ -3066,6 +3074,180 @@ void RefreshSystemStatus(int selectedAccountIndex) {
     s.checked = true;
     std::lock_guard<std::mutex> lock(systemStatusMutex);
     systemStatus = s;
+}
+
+/* ---------- self-update ---------- */
+
+std::mutex updateMutex;
+UpdateState updateState;
+static std::string g_updateSha;  // blob hash of the exe on GitHub, from the last check
+
+static const wchar_t* kUpdateRepoPath = L"/repos/x4qo/vels-roblox-multi-tool/contents?ref=main";
+static const wchar_t* kUpdateCommitsPath = L"/repos/x4qo/vels-roblox-multi-tool/commits?path=VelsMultiTool.exe&per_page=1";
+static const char* kUpdateExeUrl = "https://raw.githubusercontent.com/x4qo/vels-roblox-multi-tool/main/VelsMultiTool.exe";
+
+static void SetUpdateState(const std::string& status, const std::string& message, float progress = 0.0f) {
+    std::lock_guard<std::mutex> lock(updateMutex);
+    updateState.status = status;
+    updateState.message = message;
+    updateState.progress = progress;
+}
+
+// The hash git stores a file under: SHA-1 of "blob <size>\0" followed by the contents.
+// GitHub reports it for every file, so no version number has to be kept in sync.
+static std::string GitBlobSha(const std::wstring& file) {
+    std::error_code ec;
+    auto size = std::filesystem::file_size(file, ec);
+    if (ec) return "";
+    FILE* f = _wfopen(file.c_str(), L"rb");
+    if (!f) return "";
+    std::string out;
+    HCRYPTPROV prov = 0;
+    HCRYPTHASH hash = 0;
+    if (CryptAcquireContextW(&prov, nullptr, nullptr, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT) &&
+        CryptCreateHash(prov, CALG_SHA1, 0, 0, &hash)) {
+        std::string header = "blob " + std::to_string(size);
+        bool ok = CryptHashData(hash, (const BYTE*)header.c_str(), (DWORD)header.size() + 1, 0) != FALSE;
+        std::vector<unsigned char> buf(1 << 16);
+        size_t n;
+        while (ok && (n = fread(buf.data(), 1, buf.size(), f)) > 0)
+            ok = CryptHashData(hash, buf.data(), (DWORD)n, 0) != FALSE;
+        BYTE digest[20];
+        DWORD len = sizeof(digest);
+        if (ok && CryptGetHashParam(hash, HP_HASHVAL, digest, &len, 0)) {
+            char hex[41];
+            for (DWORD i = 0; i < len; ++i) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+            out.assign(hex, len * 2);
+        }
+    }
+    if (hash) CryptDestroyHash(hash);
+    if (prov) CryptReleaseContext(prov, 0);
+    fclose(f);
+    return out;
+}
+
+// When this exe was linked (the timestamp in its PE header), as unix seconds; 0 if unreadable.
+static long long ExeBuildTime(const std::wstring& file) {
+    FILE* f = _wfopen(file.c_str(), L"rb");
+    if (!f) return 0;
+    unsigned int peOffset = 0, stamp = 0;
+    bool ok = fseek(f, 0x3C, SEEK_SET) == 0 && fread(&peOffset, 4, 1, f) == 1 &&
+              fseek(f, (long)peOffset + 8, SEEK_SET) == 0 && fread(&stamp, 4, 1, f) == 1;
+    fclose(f);
+    return ok ? (long long)stamp : 0;
+}
+
+// When the exe on GitHub was last committed, as unix seconds; 0 if unknown.
+static long long RemoteExeCommitTime() {
+    HttpResponse r = HttpRequest(L"api.github.com", kUpdateCommitsPath, L"GET", "",
+        { { L"Accept", L"application/vnd.github+json" } }, "");
+    if (!r.ok || r.status != 200) return 0;
+    static const std::regex dateRe("\"date\"\\s*:\\s*\"(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z\"");
+    std::smatch m;
+    if (!std::regex_search(r.body, m, dateRe)) return 0;
+    std::tm t = {};
+    t.tm_year = std::stoi(m[1]) - 1900; t.tm_mon = std::stoi(m[2]) - 1; t.tm_mday = std::stoi(m[3]);
+    t.tm_hour = std::stoi(m[4]); t.tm_min = std::stoi(m[5]); t.tm_sec = std::stoi(m[6]);
+    return (long long)_mkgmtime(&t);
+}
+
+void CheckForUpdate() {
+    {
+        std::lock_guard<std::mutex> lock(updateMutex);
+        if (updateState.status == "checking" || updateState.status == "downloading" || updateState.status == "ready") return;
+        updateState = { "checking", "", 0.0f };
+    }
+    HttpResponse r = HttpRequest(L"api.github.com", kUpdateRepoPath, L"GET", "",
+        { { L"Accept", L"application/vnd.github+json" } }, "");
+    if (!r.ok || r.status != 200) {
+        SetUpdateState("error", r.status == 403 || r.status == 429 ? "GitHub is rate-limiting this network. Try again in a few minutes."
+                                : "Could not reach GitHub" + (r.status ? " (status " + std::to_string(r.status) + ")." : "."));
+        return;
+    }
+    static const std::regex shaRe("\"name\"\\s*:\\s*\"VelsMultiTool\\.exe\"[^}]*?\"sha\"\\s*:\\s*\"([0-9a-f]{40})\"");
+    std::smatch m;
+    if (!std::regex_search(r.body, m, shaRe)) {
+        SetUpdateState("error", "GitHub did not list a prebuilt VelsMultiTool.exe.");
+        return;
+    }
+    std::string remote = m[1].str(), local = GitBlobSha(SelfExePath());
+    if (local.empty()) { SetUpdateState("error", "Could not read this exe to compare it."); return; }
+    { std::lock_guard<std::mutex> lock(updateMutex); g_updateSha = remote; }
+    if (remote == local) { SetUpdateState("current", "You're on the latest build (" + local.substr(0, 7) + ")."); return; }
+    // A different exe is only an update if it is newer: a build made after the GitHub
+    // one was committed (a local build not published yet) must never be "updated" back.
+    long long built = ExeBuildTime(SelfExePath()), published = RemoteExeCommitTime();
+    if (built > 0 && published > 0 && built > published)
+        SetUpdateState("current", "This build is newer than the one on GitHub (" + remote.substr(0, 7) + ").");
+    else SetUpdateState("available", "A different build is on GitHub (" + remote.substr(0, 7) + "). You have " + local.substr(0, 7) + ".");
+}
+
+// Downloads the GitHub exe, checks it is exactly the build the check saw, then swaps it
+// in for the running one (kept as .old until the next start). Returns true when a
+// restart will load the new build.
+bool InstallUpdate() {
+    std::string expected;
+    {
+        std::lock_guard<std::mutex> lock(updateMutex);
+        if (updateState.status != "available" || g_updateSha.empty()) return false;
+        expected = g_updateSha;
+        updateState = { "downloading", "", 0.0f };
+    }
+    std::wstring self = SelfExePath();
+    std::wstring fresh = self + L".update", old = self + L".old";
+    bool got = DownloadToFile(kUpdateExeUrl, fresh, [](float p) {
+        std::lock_guard<std::mutex> lock(updateMutex);
+        updateState.progress = p;
+    });
+    std::error_code ec;
+    if (!got) { SetUpdateState("error", "The download failed. Check your connection and try again."); return false; }
+    if (GitBlobSha(fresh) != expected) {
+        std::filesystem::remove(fresh, ec);
+        SetUpdateState("error", "The download did not match the build on GitHub, so it was discarded. Check again.");
+        return false;
+    }
+    // A running exe can be renamed but not overwritten.
+    if (!MoveFileExW(self.c_str(), old.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        std::filesystem::remove(fresh, ec);
+        SetUpdateState("error", "Could not replace the exe (is its folder write-protected?).");
+        return false;
+    }
+    if (!MoveFileExW(fresh.c_str(), self.c_str(), 0)) {
+        MoveFileExW(old.c_str(), self.c_str(), 0);  // put the running build back
+        std::filesystem::remove(fresh, ec);
+        SetUpdateState("error", "Could not put the new exe in place. Nothing was changed.");
+        return false;
+    }
+    SetUpdateState("ready", "Update installed. Restarting…", 1.0f);
+    Log("[v] Update " + expected.substr(0, 7) + " installed.");
+    return true;
+}
+
+std::atomic<bool> updateNotify{ true };
+std::atomic<bool> updateAuto{ false };
+
+static std::wstring UpdateSettingsFilePath() { return g_exeDir + L"\\update.dat"; }
+
+void SetUpdateSettings(bool notify, bool autoUpdate) {
+    updateNotify = notify;
+    updateAuto = autoUpdate;
+    std::ofstream f(UpdateSettingsFilePath().c_str(), std::ios::trunc);
+    if (f) f << (notify ? 1 : 0) << ' ' << (autoUpdate ? 1 : 0);
+}
+
+// Runs once at startup: looks for an update and, unless the user turned that off,
+// flags it for the UI to offer (or to install on its own when auto-update is on).
+void StartupUpdateCheck() {
+    {
+        std::ifstream f(UpdateSettingsFilePath().c_str());
+        int notify = 1, autoOn = 0;
+        if (f >> notify >> autoOn) { updateNotify = notify != 0; updateAuto = autoOn != 0; }
+    }
+    if (!updateNotify && !updateAuto) return;
+    CheckForUpdate();
+    std::lock_guard<std::mutex> lock(updateMutex);
+    if (updateState.status == "available") updateState.prompt = true;
+    else if (updateState.status == "error") updateState = {};  // a failed background check stays silent
 }
 
 }

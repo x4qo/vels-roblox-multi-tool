@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <title>Vels Multi Tool</title>
 <style>
-@font-face{font-family:"Inter";src:url("https://vels.example/inter.ttf") format("truetype");font-weight:100 900;font-display:block}
 :root{
   --bg:#0b0c0e;--bg2:#0f1013;--panel:#131418;--panel2:#181a1f;--hover:#1e2026;--line:#212329;--line2:#2c2f37;
   --text:#f2f4f7;--soft:#d3d7de;--muted:#a6acb8;--dim:#7c8290;
@@ -21,7 +20,7 @@ html,body{height:100%;margin:0}
 /* theme swaps and colour changes glide instead of snapping */
 .top,.toolbar,.card,.accounts,.acc-h,.acc-foot,.thead,.field,.chip,.status,.brand-mark,.buildrow,.adapter,.tile,.pchip,body{
   transition:background-color .3s ease,border-color .3s ease,color .25s ease}
-body{background:var(--bg);color:var(--text);font:13.5px/1.45 "Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;text-rendering:optimizeLegibility;font-optical-sizing:auto;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--text);font:13.5px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;text-rendering:optimizeLegibility;font-optical-sizing:auto;-webkit-font-smoothing:antialiased}
 input,textarea{user-select:text}
 button{font:inherit;color:inherit}
 b,strong{font-weight:700}
@@ -42,8 +41,8 @@ b,strong{font-weight:700}
 /* top bar */
 .top{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--top-bg)}
 .brand{display:flex;align-items:center;gap:12px;flex:none}
-.brand-mark{width:42px;height:42px;border-radius:12px;background:var(--brand-bg);border:1px solid var(--line2);display:grid;place-items:center}
-.brand-mark img{width:28px;height:28px;filter:drop-shadow(0 1px 2px #000c)}
+.brand-mark{width:42px;height:42px;display:grid;place-items:center;flex:none}
+.brand-mark img{width:100%;height:100%;display:block}
 .brand h1{margin:0;font-size:15px;font-weight:800;letter-spacing:-.015em;line-height:1.2}
 .brand .tagline{font-size:11.5px;color:var(--muted);font-weight:500}
 .stats{display:flex;gap:6px;margin-left:10px;min-width:0}
@@ -134,8 +133,8 @@ b,strong{font-weight:700}
 #loader.gone{opacity:0;visibility:hidden}
 .load-in{display:flex;flex-direction:column;align-items:center;gap:28px;animation:load-enter .5s cubic-bezier(.2,.7,.3,1) both}
 @keyframes load-enter{from{opacity:0;transform:translateY(8px) scale(.96)}}
-.load-mark{width:86px;height:86px;border-radius:23px;background:var(--brand-bg);border:1px solid var(--line2);display:grid;place-items:center;box-shadow:0 14px 34px -16px #000;animation:load-breathe 2.6s ease-in-out infinite}
-.load-mark img{width:52px;height:52px}
+.load-mark{width:86px;height:86px;border-radius:21px;display:grid;place-items:center;box-shadow:0 14px 34px -16px #000;animation:load-breathe 2.6s ease-in-out infinite}
+.load-mark img{width:100%;height:100%;display:block}
 @keyframes load-breathe{50%{transform:scale(1.05)}}
 .load-bar{width:150px;height:3px;border-radius:2px;background:var(--sk-bg);overflow:hidden;position:relative}
 .load-bar i{position:absolute;top:0;left:0;height:100%;width:40%;border-radius:2px;background:linear-gradient(90deg,transparent,var(--silver1) 45%,var(--silver1) 55%,transparent);animation:load-slide 1.15s ease-in-out infinite}
@@ -208,6 +207,24 @@ b,strong{font-weight:700}
 .bstat b{color:var(--text)}
 .progress{height:6px;border-radius:4px;background:var(--bg2);overflow:hidden;margin-top:7px;border:1px solid var(--line)}
 .progress i{display:block;height:100%;background:var(--silver1);border-radius:4px;transition:width .3s}
+/* update prompt */
+.upd{text-align:center;padding:6px 4px 0}
+.upd-ic{width:52px;height:52px;border-radius:15px;display:grid;place-items:center;margin:0 auto 14px;background:#10201a;border:1px solid #1f5a3f;color:var(--green);transition:background .3s,border-color .3s,color .3s}
+.upd-ic .i{width:24px;height:24px}
+.upd-ic.err{background:#221313;border-color:#5a2424;color:var(--red)}
+.upd-ic.busy .i{animation:upd-bob 1.1s ease-in-out infinite}
+@keyframes upd-bob{50%{transform:translateY(3px)}}
+.upd h3{font-size:17px}
+.upd p{margin:6px auto 0;max-width:340px;line-height:1.5}
+.upd-body{animation:upd-in .28s cubic-bezier(.3,.7,.3,1)}
+@keyframes upd-in{from{opacity:0;transform:translateY(6px)}}
+.upd .progress{height:8px;margin:18px 6px 0}
+.upd .progress i{width:0;transition:width .45s cubic-bezier(.3,.7,.3,1)}
+.upd-pct{margin-top:8px;color:var(--dim);font-size:11px;font-variant-numeric:tabular-nums}
+.upd .foot{justify-content:center}
+.upd .foot .btn{min-width:120px}
+.upd-never{display:block;margin:12px auto 0;border:0;background:none;color:var(--dim);font:inherit;font-size:11.5px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:color .15s}
+.upd-never:hover{color:var(--muted);text-decoration:underline}
 .buildrow{display:flex;align-items:center;gap:10px;margin-top:12px;padding:8px 6px 8px 10px;border-radius:10px;background:var(--bg2);border:1px solid var(--line)}
 .buildrow .t{flex:1;min-width:0}
 .buildrow .t b{display:block;font-size:12.5px}
@@ -387,13 +404,13 @@ body.is-selecting,body.is-selecting *{user-select:none!important}
 .toast.out{opacity:0;transform:translateY(6px)}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}}
 
-/* every piece of text is Inter, bold */
-/* All Inter. Semibold base reads clearly bold but renders cleaner than a
-   universal 700 (heavy weights look blobby in WebView2's grayscale AA);
-   names, headings, values and buttons stay a full bold for emphasis. */
-*,*::before,*::after,input::placeholder,textarea::placeholder{font-family:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif!important;font-weight:600!important}
-.nm,.btn,.chip b,.pstats b,.acc-h h2,.card-h h2,.brand h1,.n,.ord,.mi,.menu,b,strong,.tag,.status .t b,.place-by b,.subplace b,.count,.selinfo b{font-weight:700!important}
-h1,h2,h3,.place-name,.load-title{font-weight:800!important}
+/* Every piece of text is Segoe UI, the Windows system font: it is hinted for
+   Windows text rendering, so small sizes stay crisp where an embedded web font
+   (this used to be Inter, all semibold) came out soft and jagged. Medium base,
+   semibold for names, values and buttons, bold display cut for headings. */
+*,*::before,*::after,input::placeholder,textarea::placeholder{font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif!important;font-weight:500!important}
+.nm,.btn,.chip b,.pstats b,.acc-h h2,.card-h h2,.brand h1,.n,.ord,.mi,.menu,b,strong,.tag,.status .t b,.place-by b,.subplace b,.count,.selinfo b{font-weight:600!important}
+h1,h2,h3,.place-name,.load-title{font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif!important;font-weight:700!important}
 
 @media (max-width:1320px){.hide-md{display:none!important}}
 @media (max-width:1180px){
@@ -745,6 +762,7 @@ function onState(s) {
   renderLaunch();
   updateArrangeButton();
   if (settingsRefresh) settingsRefresh();
+  syncUpdatePrompt();
   const key = JSON.stringify(s.accounts);
   if (key !== accountsKey) { accountsKey = key; renderGroups(); renderAccounts(); }
   else updateSelectionUI();
@@ -1514,6 +1532,65 @@ $('#btnArrange').addEventListener('contextmenu', e => {
     on: () => { S.arrange.auto = !S.arrange.auto; send('arrangeSet', { auto: S.arrange.auto }); } }]), { width: 240 });
 });
 
+/* ---------- update prompt ---------- */
+
+// Shown once per run when the startup check finds a newer build; then follows the
+// download through to the restart. Each phase fades in, the bar eases between ticks.
+let updModal = null, updPhase = '', updOffered = false, updAuto = false;
+const UPD_PHASES = {
+  available: { ic: 'download', title: 'Update available', text: 'This copy of Vels Multi Tool is out of date. Would you like to update now? It takes a few seconds and reopens right where you are.',
+    foot: '<button class="btn ghost" data-later>Not now</button><button class="btn primary" data-go>Update now</button>', never: true },
+  downloading: { ic: 'download', busy: true, title: 'Updating…', text: 'Downloading the new build. Your accounts and settings carry over.', bar: true },
+  ready: { ic: 'ok', title: 'Update installed', text: 'Restarting with the new build…', bar: true },
+  error: { ic: 'alert', err: true, title: 'Update failed', foot: '<button class="btn ghost" data-close>Close</button><button class="btn primary" data-retry>Try again</button>' }
+};
+function syncUpdatePrompt() {
+  const u = S && S.update;
+  if (!u) return;
+  if (!updModal) {
+    if (!u.prompt || updOffered || !loaderGone || u.status !== 'available') return;
+    updOffered = true;
+    updPhase = '';
+    // Not openModal: Escape or a stray click outside shouldn't drop it mid-update.
+    closePopover();
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg';
+    bg.innerHTML = '<div class="modal" role="dialog"><div class="upd"></div></div>';
+    document.body.appendChild(bg);
+    updModal = bg.firstElementChild;
+    updModal.closeUpd = () => { bg.remove(); updModal = null; };
+    // Auto-update: skip the question and go straight to the download view.
+    updAuto = !!u.auto;
+    if (updAuto) send('updateInstall');
+  }
+  if (u.status === 'current') { updModal.closeUpd(); return; }
+  // A manual re-check from Settings can pass through these while the prompt is open.
+  if (u.status !== 'available') updAuto = false;
+  const phase = updAuto ? 'downloading' : UPD_PHASES[u.status] ? u.status : updPhase;
+  if (phase !== updPhase) {
+    updPhase = phase;
+    const p = UPD_PHASES[phase];
+    updModal.querySelector('.upd').innerHTML = `<div class="upd-body">
+      <div class="upd-ic${p.err ? ' err' : ''}${p.busy ? ' busy' : ''}">${icon(p.ic)}</div>
+      <h3>${p.title}</h3><p>${esc(p.text || u.message || '')}</p>
+      ${p.bar ? '<div class="progress"><i></i></div><div class="upd-pct"></div>' : ''}
+      ${p.foot ? `<div class="foot">${p.foot}</div>` : ''}
+      ${p.never ? '<button class="upd-never" data-never>Do not show this again</button>' : ''}</div>`;
+    const on = (sel, fn) => { const b = updModal.querySelector(sel); if (b) b.onclick = fn; };
+    on('[data-later]', () => updModal.closeUpd());
+    on('[data-never]', () => { send('updateSettings', { notify: false }); updModal.closeUpd(); toast('info', 'Update reminders are off. Turn them back on in Settings.'); });
+    on('[data-go]', () => send('updateInstall'));
+    on('[data-close]', () => updModal.closeUpd());
+    on('[data-retry]', () => send('updateCheck'));
+  }
+  const bar = updModal && updModal.querySelector('.progress i');
+  if (bar) {
+    const pct = u.status === 'ready' ? 100 : u.progress;
+    requestAnimationFrame(() => { bar.style.width = pct + '%'; });
+    updModal.querySelector('.upd-pct').textContent = u.status === 'ready' ? 'Done' : pct + '%';
+  }
+}
+
 let settingsRefresh = null;
 $('#btnSettings').onclick = () => {
   openModal(`<h3>Settings</h3>
@@ -1539,8 +1616,15 @@ $('#btnSettings').onclick = () => {
       </section>
       <section>
         <div class="s-h">${icon('type')}Roblox font</div>
-        <p class="s-desc">Replaces <b>every font</b> in the Roblox client with one of your own (<b>.ttf</b>, <b>.otf</b> or <b>.ttc</b>). It's applied to each Roblox install, including downloaded builds, and re-applied after Roblox updates. Restart Roblox to see a change.</p>
+        <p class="s-desc">Replaces <b>every font</b> in the Roblox client with one of your own (<b>.ttf</b>, <b>.otf</b> or <b>.ttc</b>). It's applied to each Roblox install, including downloaded builds, and re-applied after Roblox updates. It also overrides any font set in <b>Bloxstrap</b> or <b>Fishstrap</b>. Restart Roblox to see a change.</p>
         <div class="row2"><button class="btn" id="fontPick" data-i="type" style="flex:1;min-width:0"><span id="fontPickLbl" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Choose font…</span></button><button class="btn toggle" id="fontOn" style="flex:1"><span class="sw"></span>Use custom font</button></div>
+      </section>
+      <section>
+        <div class="s-h">${icon('download')}Updates</div>
+        <p class="s-desc">Compares this copy with the latest prebuilt <b>VelsMultiTool.exe</b> on GitHub. Updating downloads it, swaps it in and restarts the tool in the same spot. Your accounts and settings carry over.</p>
+        <button class="btn" id="updBtn" style="width:100%"><span id="updLbl">Check for updates</span></button>
+        <div class="row2 mt"><button class="btn toggle" id="updNotify" style="flex:1" title="Offer new builds in a dialog when the tool starts"><span class="sw"></span>Ask at startup</button><button class="btn toggle" id="updAutoBtn" style="flex:1" title="Install new builds as soon as they are found at startup, without asking"><span class="sw"></span>Auto-update</button></div>
+        <div class="s-note" id="updNote" hidden></div>
       </section>
       <section>
         <div class="s-h">${icon('cookie')}Roblox cookies</div>
@@ -1573,6 +1657,16 @@ $('#btnSettings').onclick = () => {
       m.querySelector('#fontPick').title = f.has ? 'Pick a different font file' : 'Pick a font file';
       m.querySelector('#fontOn').classList.toggle('on', !!f.enabled);
       m.querySelector('#fontOn').disabled = !f.has;
+      const u = S.update || { status: 'idle', message: '' };
+      const busy = u.status === 'checking' || u.status === 'downloading' || u.status === 'ready';
+      m.querySelector('#updBtn').disabled = busy;
+      m.querySelector('#updBtn').classList.toggle('primary', u.status === 'available');
+      m.querySelector('#updLbl').textContent = u.status === 'checking' ? 'Checking…' : u.status === 'downloading' ? `Downloading… ${u.progress}%`
+        : u.status === 'ready' ? 'Restarting…' : u.status === 'available' ? 'Update and restart' : 'Check for updates';
+      m.querySelector('#updNotify').classList.toggle('on', u.notify !== false);
+      m.querySelector('#updAutoBtn').classList.toggle('on', !!u.auto);
+      m.querySelector('#updNote').hidden = !u.message;
+      m.querySelector('#updNote').innerHTML = icon(u.status === 'error' ? 'alert' : u.status === 'current' ? 'ok' : 'info') + esc(u.message || '');
     };
     settingsRefresh = refresh;
     refresh();
@@ -1597,6 +1691,9 @@ $('#btnSettings').onclick = () => {
     };
     wireArrange(m);
     m.querySelector('#fontPick').onclick = () => send('fontPick');
+    m.querySelector('#updNotify').onclick = () => { if (!S || !S.update) return; S.update.notify = S.update.notify === false; refresh(); send('updateSettings', { notify: S.update.notify }); };
+    m.querySelector('#updAutoBtn').onclick = () => { if (!S || !S.update) return; S.update.auto = !S.update.auto; refresh(); send('updateSettings', { auto: S.update.auto }); };
+    m.querySelector('#updBtn').onclick = () => send(S && S.update && S.update.status === 'available' ? 'updateInstall' : 'updateCheck');
     m.querySelector('#fontOn').onclick = () => { if (!S || !S.font || !S.font.has) return; S.font.enabled = !S.font.enabled; refresh(); send('fontSet', { enabled: S.font.enabled }); };
     m.querySelector('#setCookies').onclick = () => confirmModal({
       title: 'Clear Roblox cookies?',
@@ -1873,6 +1970,7 @@ if (!DEMO) {
     else if (m.type === 'relaunch') {
       if (m.stage === 'pending') showHandoff('Waiting for administrator approval', 'Accept the Windows prompt to continue.');
       else if (m.stage === 'handoff') showHandoff('Switching to administrator mode', 'Your session carries over, one moment…');
+      else if (m.stage === 'update') showHandoff('Installing update', 'Restarting with the new build, one moment…');
       else { hideHandoff(); toast('err', 'Administrator access was declined.'); }
     }
   });
